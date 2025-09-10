@@ -47,6 +47,6 @@ private:
     float delta_max;
     uint16_t pwm_min = 1000;
     uint16_t pwm_max = 2000;
-    float angle_deg = 45.0;
+    float angle_deg = 28.0;
 };
 

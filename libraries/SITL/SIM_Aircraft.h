@@ -283,9 +283,10 @@ protected:
 
     enum GroundBehaviour {
         GROUND_BEHAVIOR_NONE = 0,
-        GROUND_BEHAVIOR_NO_MOVEMENT,
-        GROUND_BEHAVIOR_FWD_ONLY,
-        GROUND_BEHAVIOR_TAILSITTER,
+        GROUND_BEHAVIOR_NO_MOVEMENT = 1,
+        GROUND_BEHAVIOR_FWD_ONLY = 2,
+        GROUND_BEHAVIOR_TAILSITTER = 3,
+        GROUND_BEHAVIOR_CUSTOM = 4
     } ground_behavior;
 
     bool use_smoothing;
@@ -323,6 +324,10 @@ protected:
     /* return a monotonic wall clock time in microseconds */
     uint64_t get_wall_time_us(void) const;
 
+    //update flight state takeoff or cruise
+
+    bool update_flight_mode(const struct sitl_input &input);
+
     // update attitude and relative position
     void update_dynamics(const Vector3f &rot_accel);
 
@@ -351,6 +356,7 @@ protected:
 
     // update EAS speeds
     void update_eas_airspeed();
+
 
     // clamp support
     class Clamp {

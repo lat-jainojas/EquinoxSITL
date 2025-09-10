@@ -672,6 +672,8 @@ void Aircraft::set_speedup(float speedup)
     setup_frame_time(rate_hz, speedup);
 }
 
+
+
 void Aircraft::update_home()
 {
     if (!home_is_set) {
@@ -698,6 +700,15 @@ void Aircraft::update_model(const struct sitl_input &input)
     }
 }
 
+bool Aircraft::update_flight_mode(const struct sitl_input &input)
+{
+    bool flightmode = 0;
+
+    if (0){
+        flightmode = 1;
+    }
+    return flightmode;
+}
 /*
   update the simulation attitude and relative position
  */
@@ -858,6 +869,10 @@ void Aircraft::update_dynamics(const Vector3f &rot_accel)
             gyro.zero();
             gyro.x = yaw_rate;
             use_smoothing = true;
+            break;
+        }
+        case GROUND_BEHAVIOR_CUSTOM: {
+    
             break;
         }
         }

@@ -398,7 +398,8 @@ const AP_Param::GroupInfo SIM::var_info2[] = {
 
     // @Param: GND_BEHAV
     // @DisplayName: Ground behavior
-    // @Description: Ground behavior of aircraft (tailsitter, no movement, forward only)
+    // @Description: Ground behavior of aircraft (tailsitter, no movement, forward only,custom)
+    // @Values: 0:None,1:No movement,2:Forward only,3:Tailsitter,4:Custom
     AP_GROUPINFO("GND_BEHAV",   41, SIM,  gnd_behav, -1),
 
     // @Param: IMU_ORIENT
