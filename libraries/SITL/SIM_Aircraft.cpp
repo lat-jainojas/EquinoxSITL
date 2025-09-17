@@ -731,6 +731,9 @@ void Aircraft::update_dynamics(const Vector3f &rot_accel)
     // update rotational rates in body frame
     gyro += rot_accel * delta_time;
 
+    gyro.x = 0.0f;
+    gyro.z = 0.0f;
+
     gyro.x = constrain_float(gyro.x, -radians(2000.0f), radians(2000.0f));
     gyro.y = constrain_float(gyro.y, -radians(2000.0f), radians(2000.0f));
     gyro.z = constrain_float(gyro.z, -radians(2000.0f), radians(2000.0f));

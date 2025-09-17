@@ -29,6 +29,14 @@
 // NEW AERODYNAMIC MODEL FUNCTIONS
 // =============================================================================
 
+// clamp helper
+static inline double clamp_double(double v, double lo, double hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+
 /*
  * Cruise Unified CL
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
@@ -63,7 +71,7 @@
     double CL = linear_part + stall_part + 0.016539 * delta_e + 0.0 * delta_f - 0.000220 * delta_a + 
                2.138917 * C_mu - 0.020904 * alpha * C_mu + 0.000212 * alpha * delta_e;
     
-    return CL;
+    return clamp_double(CL, -1.0, 4.5);
 }
 
 /*
@@ -100,7 +108,7 @@ static inline double compute_CL_takeoff_unified(double alpha, double delta_e, do
     double CL = linear_part + stall_part + 0.016336 * delta_e + 2.415945 * delta_f + 2.415939 * delta_a + 
                2.501769 * C_mu + 0.109898 * alpha * C_mu - 0.000503 * alpha * delta_e;
     
-    return CL;
+    return clamp_double(CL, -1.0, 4.5);
 }
 
 /*
@@ -118,7 +126,7 @@ static inline double compute_CD_cruise_unified(double alpha, double delta_e, dou
     double k = 0.046;
     
     double CD = CD0 + k * (CL_meas * CL_meas);
-    return CD;
+    return clamp_double(CD, 0.0, 3.0);
 }
 
 /*
@@ -136,51 +144,88 @@ static inline double compute_CD_takeoff_unified(double alpha, double delta_e, do
     double k = 0.056;
     
     double CD = CD0 + k * (CL_meas * CL_meas);
-    return CD;
+    return clamp_double(CD, 0.0, 3.0);
 }
 
 
 /*
- * Cm Pre-stall Cruise
+ * Cruise Unified Cm
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
  * Output: Cm
  */
-static inline double compute_Cm_cruise_prestall(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
-    double Cm = 0.1970 - 0.0621 * alpha - 0.0832 * delta_e + 0.0000 * delta_f - 0.0019 * delta_a + 
-               1.5824 * C_mu + 0.2833 * alpha * C_mu;
-    return Cm;
+static inline double compute_Cm_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
+    // Compute alpha_eff
+    double alpha_eff;
+    if (alpha >= 0) {
+        alpha_eff = alpha + (-0.044524) * delta_e;
+    } else {
+        alpha_eff = alpha + 0.011528 * delta_e;
+    }
+    
+    // Compute sigma
+    double sigma;
+    if (alpha >= 0) {
+        double exp1 = exp(-119.999992 * (alpha_eff * M_PI/180.0 - 0.349066));
+        double exp2 = exp(119.999992 * (alpha_eff * M_PI/180.0 + 0.349066));
+        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
+    } else {
+        double exp1 = exp(-104.966037 * (alpha_eff * M_PI/180.0 - 0.320230));
+        double exp2 = exp(104.966037 * (alpha_eff * M_PI/180.0 + 0.320230));
+        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
+    }
+    
+    // Compute Cm
+    double alpha_eff_rad = alpha_eff * M_PI/180.0;
+    double linear_part = (1 - sigma) * (0.202690 + (-0.060624) * alpha);
+    double stall_part = sigma * (-0.250000) * 2 * copysign(1.0, alpha_eff_rad) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
+     double control_terms = (-0.081528) * delta_e + 0.000000 * delta_f + (-0.001187) * delta_a + 
+                           1.406879 * C_mu + 0.321595 * alpha * C_mu + (-0.001101) * alpha * delta_e;
+     
+     double Cm = linear_part + stall_part + control_terms;
+     
+     return clamp_double(Cm, -3.0, 3.0);
 }
 
 /*
- * Cm Post-stall Cruise
- * Inputs: alpha (radians)
- * Output: Cm
- */
-static inline double compute_Cm_cruise_poststall(double alpha_rad) {
-    double Cm = -0.1255 * alpha_rad + 1.2378;
-    return Cm;
-}
-
-/*
- * Cm Pre-stall Takeoff
+ * Takeoff Unified Cm
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
  * Output: Cm
  */
-static inline double compute_Cm_takeoff_prestall(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
-    double Cm = 2.1932 - 0.0353 * alpha - 0.0721 * delta_e - 0.1756 * delta_f + 0.1404 * delta_a + 
-               0.2216 * C_mu + 0.1007 * alpha * C_mu;
-    return Cm;
+static inline double compute_Cm_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
+    // Compute alpha_eff
+    double alpha_eff;
+    if (alpha >= 0) {
+        alpha_eff = alpha + (-0.059164) * delta_e;
+    } else {
+        alpha_eff = alpha + 0.000681 * delta_e;
+    }
+    
+    // Compute sigma
+    double sigma;
+    if (alpha >= 0) {
+        double exp1 = exp(-12.709373 * (alpha_eff * M_PI/180.0 - 0.349066));
+        double exp2 = exp(12.709373 * (alpha_eff * M_PI/180.0 + 0.349066));
+        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
+    } else {
+        double exp1 = exp(-99.615681 * (alpha_eff * M_PI/180.0 - 0.336355));
+        double exp2 = exp(99.615681 * (alpha_eff * M_PI/180.0 + 0.336355));
+        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
+    }
+    
+    // Compute Cm
+    double alpha_eff_rad = alpha_eff * M_PI/180.0;
+    double linear_part = (1 - sigma) * (59.906142 + (-0.029240) * alpha);
+    double stall_part = sigma * (0.250000) * 2 * copysign(1.0, alpha_eff_rad) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
+     double control_terms = (-0.063277) * delta_e + (-1.479697) * (delta_f + delta_a)/2.0 + 
+                           0.226271 * C_mu + 0.144623 * alpha * C_mu + (-0.002710) * alpha * delta_e;
+     
+     double Cm = linear_part + stall_part + control_terms;
+     
+     return clamp_double(Cm, -3.0, 3.0);
 }
 
-/*
- * Cm Post-stall Takeoff
- * Inputs: alpha (radians) 
- * Output: Cm
- */
-static inline double compute_Cm_takeoff_poststall(double alpha_rad) {
-    double Cm = 3.3535 * exp(-0.3618 * (alpha_rad - 6)) - 0.3649;
-    return Cm;
-}
+
+
 
 /*
  * Determine flight mode based on aircraft state
@@ -204,12 +249,7 @@ static inline bool is_takeoff_mode(bool is_on_ground, double throttle, double ai
     return (throttle > 0.6);  // High throttle = takeoff/climb, low throttle = cruise
 }
 
-// clamp helper
-static inline double clamp_double(double v, double lo, double hi) {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
-    return v;
-}
+
 
 // Smooth transition function using sigmoid blending
 // Returns 0 at speed_low, 1 at speed_high, smooth transition in between
@@ -280,6 +320,15 @@ using namespace SITL;
 // Global variables for shutdown logging
 static FILE* g_csv_file = nullptr;
 static char g_current_filename[256] = {0};
+
+// ====================================================================
+// LOGGING CONTROL FLAG
+// ====================================================================
+// Set this flag to true to enable CSV data logging during simulation
+// When enabled, logs flight data at 10 Hz to timestamped CSV files
+// Files are automatically saved when SITL disconnects
+// Set to false to disable logging completely (saves CPU and disk space)
+static const bool ENABLE_CSV_LOGGING = false;  // Change to false to disable logging
 
 // Shutdown handler - called when SITL disconnects/terminates
 static void cleanup_csv_logging() {
@@ -664,7 +713,7 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
     const float theta = AP::ahrs().get_pitch();
 
 
-
+    
     float thrust_offset = 0.091;
 	//calculate aerodynamic force
 	double qbar = 1.0/2.0*rho*pow(airspeed,2)*s; //Calculate dynamic pressure
@@ -896,32 +945,6 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
             break;
         } // end AIRBORNE
         } // end switch
-
-        // debug print
-        // std::printf("DBG: alt_gotten=%d origin_hagl_up=%.3f ground_latched=%d wheel_z_touch=%.3f "
-        //             "wheelNose_z=%.3f wheelMain_z=%.3f wheelNose_AGL=%.3f wheelMain_AGL=%.3f AGL=%.3f "
-        //             "Fz_up_f=%.2f force_exceeds=%d force_below=%d alt_stable_cnt=%d state=%d\n",
-        //             int(alt_gotten),
-        //             origin_hagl_up,
-        //             int(ground_wheel_z_latched),
-        //             ground_wheel_z_touch,
-        //             wheelNose_world_z,
-        //             wheelMain_world_z,
-        //             wheelNose_AGL_up,
-        //             wheelMain_AGL_up,
-        //             AGL_up,
-        //             Fz_up_f,
-        //             int(force_exceeds),
-        //             int(force_below),
-        //             alt_stable_cnt,
-        //             int(air_state)
-        // );
-
-        // 5) Finish as before: project normals back to BODY and add to aero-only forces
-        // std::printf("state=%d fm =%d AGL=%.3f Fz_up=%.1f Nf=%.1f Nb=%.1f\n",
-                    // int(air_state),int(fm), AGL_up, Fz_up, Nf, Nb);
-        //std::printf("flightmode = %d,CL=%.5f,CD=%.5f,CM=%.5f,CY=%.5f\n",fm,CL_direct,CD_direct,Cm_direct,CY_direct);
-
         const float fx_norm_b =  (Nf + Nb) * std::sin(theta);
         const float fz_norm_b = -(Nf + Nb) * std::cos(theta);
 
@@ -1041,16 +1064,12 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
             // === MOMENT CALCULATIONS ===
             float l_aero = 0.0f;  // Set to zero as requested
             
-            // Compute moment coefficient using pre-stall functions
+            // Compute moment coefficient using unified functions
             double Cm_unified;
             if (takeoff_mode) {
-                // Use takeoff pre-stall function
-                Cm_unified = 2.1932 - 0.0353 * alpha_deg - 0.0721 * del_e_deg - 0.1756 * del_f_deg + 0.1404 * del_a_deg + 
-                            0.2216 * C_mu + 0.1007 * alpha_deg * C_mu;
+                Cm_unified = compute_Cm_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu);
             } else {
-                // Use cruise pre-stall function
-                Cm_unified = 0.1970 - 0.0621 * alpha_deg - 0.0832 * del_e_deg + 0.0000 * del_f_deg - 0.0019 * del_a_deg + 
-                            1.5824 * C_mu + 0.2833 * alpha_deg * C_mu;
+                Cm_unified = compute_Cm_cruise_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu);
             }
 
             const double Cm_q = -95.2255;  // Pitch damping coefficient
@@ -1254,13 +1273,16 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
                      takeoff_mode ? "TKOFF" : "CRUISE", airspeed, pitch_deg, v_z, alpha_deg, alpha_deg_raw, del_e_deg, del_a_deg, del_f_deg, inputRudder*radtodeg, 
                      J_display, C_mu, CL_unified, total_lift_force, CD_unified, total_drag_force, ma/(0.5*rho*sq(airspeed)*c*s), ma);
 
-             // CSV Logging at 10 Hz with timestamped files - saved automatically on SITL disconnect/shutdown
-             static bool csv_header_written = false;
-             static bool log_initialized = false;
-             static uint64_t last_log_time_ms = 0;
-             const uint64_t LOG_INTERVAL_MS = 100;  // 100ms = 10 Hz logging rate
-             
-             uint64_t current_time_ms = AP_HAL::millis64();
+            // === CSV LOGGING (CONTROLLED BY ENABLE_CSV_LOGGING FLAG) ===
+            // Only execute logging code if explicitly enabled via flag at top of file
+            if (ENABLE_CSV_LOGGING) {
+                // CSV Logging at 10 Hz with timestamped files - saved automatically on SITL disconnect/shutdown
+                static bool csv_header_written = false;
+                static bool log_initialized = false;
+                static uint64_t last_log_time_ms = 0;
+                const uint64_t LOG_INTERVAL_MS = 100;  // 100ms = 10 Hz logging rate
+                
+                uint64_t current_time_ms = AP_HAL::millis64();
              
              // Initialize logging on first call - create timestamped filename and register shutdown handlers
              if (!log_initialized) {
@@ -1301,6 +1323,7 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
                  fflush(g_csv_file);  // Ensure data is written immediately
                  last_log_time_ms = current_time_ms;  // Update last log time
              }
+            }  // End of ENABLE_CSV_LOGGING flag check
         }
         return Wrench{ Vector3f(ax, ay, az), Vector3f(la, ma, na) };
     }
