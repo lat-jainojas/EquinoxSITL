@@ -97,28 +97,10 @@ void SRV_Channel::output_ch(void)
     }
 #endif // HAL_BUILD_AP_PERIPH
 
-    // if (!(SRV_Channels::disabled_mask & (1U<<ch_num))) {
-    //     hal.rcout->write(ch_num, output_pwm);
-    // }
-
-    if (!(SRV_Channels::disabled_mask & (1U << ch_num))) {
-        // time in seconds (monotonic)
-        float freq_hz = SRV_Channels::get_rc_fs_mask()/100.0f;
-        const uint32_t now_ms = AP_HAL::millis();
-        const float t = now_ms * 1.0e-4f;
-
-        // sine parameters
-        // float freq_hz     = dshot_rate;        // 1 cycle per second
-        const float center_us   = 1500.0f;     // neutral
-        const float amplitude_us= 300.0f;      // swing (+/-)
-        const float phase       = 0; // per-channel phase = pi/4 * ch
-
-        // compute and clamp PWM
-        float pwm = center_us + amplitude_us * sinf(6.28318530718f * freq_hz * t + phase);
-        pwm = constrain_float(pwm, 1000.0f, 2000.0f);
-
-        hal.rcout->write(ch_num, (uint16_t)pwm);
+    if (!(SRV_Channels::disabled_mask & (1U<<ch_num))) {
+        hal.rcout->write(ch_num, output_pwm);
     }
+
 }
 
 /*

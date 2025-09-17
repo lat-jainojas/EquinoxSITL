@@ -1,32 +1,303 @@
-/*
-   This program is free software: you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation, either version 3 of the License, or
-   (at your option) any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-/*
-  very simple plane simulator class. Not aerodynamically accurate,
-  just enough to be able to debug control logic for new frame types
-*/
-
+// Using the generated header file from barycentric interpolation
+#include <sstream>
+#include <iomanip>
+#include <sys/select.h>
+#include <AP_HAL/AP_HAL.h>
 #include "SIM_Plane.h"
-#include<vector>
+#include <vector>
 #include <stdio.h>
+#include <time.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <ctime>
+#include <inttypes.h>
 #include <AP_Filesystem/AP_Filesystem_config.h>
 #include <AP_Filesystem/AP_Filesystem.h>
 #include <AP_AHRS/AP_AHRS.h>
 #include<stdio.h>
-#include "aero_data.h"
-#include "aero_knn.cpp"
-#include "aero_knn.h"
+// The following code is for EQUINOX's SITL Model
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+
+
+// Writing the code for Mr. Rajat Patel to read
+// What I have done is made separate functions for the different coefficients which can just be changed later on without affecting any other part of the code.
+
+// =============================================================================
+// NEW AERODYNAMIC MODEL FUNCTIONS
+// =============================================================================
+
+/*
+ * Cruise Unified CL
+ * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
+ * Output: CL
+ */
+ static inline double compute_CL_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
+    // Compute alpha_eff using equations Henil gave. (The constants are correct)
+    double alpha_eff;
+    if (alpha >= 0) {
+        alpha_eff = alpha + 0.013075 * delta_e;
+    } else {
+        alpha_eff = alpha + 0.011856 * delta_e;
+    }
+    
+    // Compute sigma from Henil's equations. (The constants are correct)
+    double sigma;
+    if (alpha >= 0) {
+        double exp1 = exp(-54.313499 * (alpha_eff * M_PI/180.0 - 0.242341));
+        double exp2 = exp(54.313499 * (alpha_eff * M_PI/180.0 + 0.242341));
+        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
+    } else {
+        double exp1 = exp(-105.054189 * (alpha_eff * M_PI/180.0 - 0.320475));
+        double exp2 = exp(105.054189 * (alpha_eff * M_PI/180.0 + 0.320475));
+        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
+    }
+    
+    // Compute CL
+    double alpha_eff_rad = alpha_eff * M_PI/180.0;
+    double linear_part = (1 - sigma) * (0.234971 + 0.114862 * alpha);
+    double stall_part = sigma * 2 * copysign(1.0, alpha_eff) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
+    
+    double CL = linear_part + stall_part + 0.016539 * delta_e + 0.0 * delta_f - 0.000220 * delta_a + 
+               2.138917 * C_mu - 0.020904 * alpha * C_mu + 0.000212 * alpha * delta_e;
+    
+    return CL;
+}
+
+/*
+ * Takeoff Unified CL
+ * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
+ * Output: CL
+ */
+static inline double compute_CL_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
+    // Compute alpha_eff
+    double alpha_eff;
+    if (alpha >= 0) {
+        alpha_eff = alpha + 0.003620 * delta_e;
+    } else {
+        alpha_eff = alpha + 0.102771 * delta_e;
+    }
+    
+    // Compute sigma
+    double sigma;
+    if (alpha >= 0) {
+        double exp1 = exp(-119.984333 * (alpha_eff * M_PI/180.0 - 0.349066));
+        double exp2 = exp(119.984333 * (alpha_eff * M_PI/180.0 + 0.349066));
+        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
+    } else {
+        double exp1 = exp(-27.288677 * (alpha_eff * M_PI/180.0 - 0.333924));
+        double exp2 = exp(27.288677 * (alpha_eff * M_PI/180.0 + 0.333924));
+        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
+    }
+    
+    // Compute CL
+    double alpha_eff_rad = alpha_eff * M_PI/180.0;
+    double linear_part = (1 - sigma) * (-192.388300 + 0.086718 * alpha);
+    double stall_part = sigma * 2 * copysign(1.0, alpha_eff) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
+    
+    double CL = linear_part + stall_part + 0.016336 * delta_e + 2.415945 * delta_f + 2.415939 * delta_a + 
+               2.501769 * C_mu + 0.109898 * alpha * C_mu - 0.000503 * alpha * delta_e;
+    
+    return CL;
+}
+
+/*
+ * Cruise Unified CD
+ * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu, CL_measured
+ * Output: CD
+ */
+static inline double compute_CD_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
+    // Use your existing CD calculation with modifications for cruise configuration
+    double CD0c = -0.51403 * C_mu + 0.107575;
+    double CD0_del_f_term = 0.01285 * delta_f + 0.0021;
+    double CD0 = CD0c + 0.0038 * delta_e + CD0_del_f_term + 0.0015 * delta_a + 1.322175 * C_mu;
+    
+    // k interpolation for cruise (0 deg flaps)
+    double k = 0.046;
+    
+    double CD = CD0 + k * (CL_meas * CL_meas);
+    return CD;
+}
+
+/*
+ * Takeoff Unified CD  
+ * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu, CL_measured
+ * Output: CD
+ */
+static inline double compute_CD_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
+    // Use your existing CD calculation with modifications for takeoff configuration
+    double CD0c = -0.51403 * C_mu + 0.107575;
+    double CD0_del_f_term = 0.01285 * delta_f + 0.0021;
+    double CD0 = CD0c + 0.0038 * delta_e + CD0_del_f_term + 0.0015 * delta_a + 1.322175 * C_mu;
+    
+    // k interpolation for takeoff (40 deg flaps)
+    double k = 0.056;
+    
+    double CD = CD0 + k * (CL_meas * CL_meas);
+    return CD;
+}
+
+
+/*
+ * Cm Pre-stall Cruise
+ * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
+ * Output: Cm
+ */
+static inline double compute_Cm_cruise_prestall(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
+    double Cm = 0.1970 - 0.0621 * alpha - 0.0832 * delta_e + 0.0000 * delta_f - 0.0019 * delta_a + 
+               1.5824 * C_mu + 0.2833 * alpha * C_mu;
+    return Cm;
+}
+
+/*
+ * Cm Post-stall Cruise
+ * Inputs: alpha (radians)
+ * Output: Cm
+ */
+static inline double compute_Cm_cruise_poststall(double alpha_rad) {
+    double Cm = -0.1255 * alpha_rad + 1.2378;
+    return Cm;
+}
+
+/*
+ * Cm Pre-stall Takeoff
+ * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
+ * Output: Cm
+ */
+static inline double compute_Cm_takeoff_prestall(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
+    double Cm = 2.1932 - 0.0353 * alpha - 0.0721 * delta_e - 0.1756 * delta_f + 0.1404 * delta_a + 
+               0.2216 * C_mu + 0.1007 * alpha * C_mu;
+    return Cm;
+}
+
+/*
+ * Cm Post-stall Takeoff
+ * Inputs: alpha (radians) 
+ * Output: Cm
+ */
+static inline double compute_Cm_takeoff_poststall(double alpha_rad) {
+    double Cm = 3.3535 * exp(-0.3618 * (alpha_rad - 6)) - 0.3649;
+    return Cm;
+}
+
+/*
+ * Determine flight mode based on aircraft state
+ * Returns true for takeoff mode, false for cruise mode
+ * Logic: 
+ * - If aircraft is on ground -> takeoff mode (regardless of throttle/speed)
+ * - If aircraft is airborne and speed <= 35 m/s -> takeoff mode (regardless of throttle)
+ * - If aircraft is airborne and speed > 35 m/s and throttle <= 0.6 -> cruise mode
+ * - If aircraft is airborne and speed > 35 m/s and throttle > 0.6 -> takeoff mode (climb)
+ */
+static inline bool is_takeoff_mode(bool is_on_ground, double throttle, double airspeed) {
+    if (is_on_ground) {
+        return true;  // Always takeoff mode on ground
+    }
+    
+    if (airspeed <= 35.0) {
+        return true;  // Always takeoff mode at low speeds
+    }
+    
+    // At high speeds (> 35 m/s), use throttle to determine mode
+    return (throttle > 0.6);  // High throttle = takeoff/climb, low throttle = cruise
+}
+
+// clamp helper
+static inline double clamp_double(double v, double lo, double hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+// Smooth transition function using sigmoid blending
+// Returns 0 at speed_low, 1 at speed_high, smooth transition in between
+static inline double smooth_transition(double speed, double speed_low, double speed_high) {
+    if (speed <= speed_low) return 0.0;
+    if (speed >= speed_high) return 1.0;
+    
+    // Sigmoid transition between speed_low and speed_high
+    double normalized = (speed - speed_low) / (speed_high - speed_low);
+    // Use smooth sigmoid: 3*x^2 - 2*x^3 (smooth at both ends)
+    return normalized * normalized * (3.0 - 2.0 * normalized);
+}
+
+// Clamp alpha to reasonable flight envelope
+static inline double clamp_alpha(double alpha_deg) {
+    double clamped = clamp_double(alpha_deg, -20.0, 20.0);  // Reasonable flight range
+    if (fabs(alpha_deg - clamped) > 0.001) {  // If clamping occurred
+        // printf("ALPHA CLAMPED: raw=%.3f° -> clamped=%.3f°\n", alpha_deg, clamped);
+    }
+    return clamped;
+}
+
+/*
+ * compute_n_from_throttle
+ * - Uses expression: n = (19771*throttle - 1896.4)/60
+ * - throttle expected in [0,1]. We clamp n to a safe minimum to avoid negative or zero rpm.
+ */
+static inline double compute_n_from_throttle(double throttle) {
+    double n = (19771.0 * throttle - 1896.4) / 60.0;
+    // guard against negative or zero spin; choose 1.0 rps as safe minimum
+    if (n < 1.0) n = 1.0;
+    return n;
+}
+
+/*
+ * compute_Cmu - Original equation with J clamping
+ * J = V_inf / (n * D)
+ * D is in meters (user specified D = 0.120 m)
+ * Cmu = 0.376/(J^2.025) + 0.0359
+ *
+ * When J < 0.70, use C_mu value computed at J = 0.70
+ */
+static inline double compute_Cmu(double V_inf, double n, double D = 0.120) {
+    // avoid division by zero / extremely small values
+    double Vsafe = (V_inf < 0.1) ? 0.1 : V_inf;       // 0.1 m/s min
+    double n_safe = (n < 1e-3) ? 1e-3 : n;           // Prevent division by very small rotor speed
+    double J_raw = Vsafe / (n_safe * D);              // Raw advance ratio
+    
+    // Clamp J to minimum of 0.70
+    const double J_min = 0.40;
+    double J_clamped = (J_raw < J_min) ? J_min : J_raw;
+    
+    double Cmu = 0.376284 / pow(J_clamped, 2.05254) + 0.035986;
+
+    if(Cmu > 0.80){
+        Cmu = 0.80;
+    }
+    return Cmu;
+}
+
+
+// // Old analytical CL and CD models removed - now using unified models above
+
+
+
+using namespace SITL;
+
+// Global variables for shutdown logging
+static FILE* g_csv_file = nullptr;
+static char g_current_filename[256] = {0};
+
+// Shutdown handler - called when SITL disconnects/terminates
+static void cleanup_csv_logging() {
+    if (g_csv_file) {
+        fclose(g_csv_file);
+        g_csv_file = nullptr;
+        printf("LOG: Saved and closed log file on SITL shutdown: %s\n", g_current_filename);
+    }
+}
+
+// Signal handler for graceful shutdown
+static void signal_handler(int signal) {
+    printf("LOG: Received signal %d, saving log file...\n", signal);
+    cleanup_csv_logging();
+    exit(signal);
+}
+
+
 using namespace SITL;
 
 Plane::Plane(const char *frame_str) :
@@ -44,16 +315,14 @@ Plane::Plane(const char *frame_str) :
 
     //mass = 2.0f;
     mass = 65.0f;
-    
 
     //inertias = 3,4,5;
-
     /*
        scaling from motor power to Newtons. Allows the plane to hold
        vertically against gravity when the motor is at hover_throttle
     */
-    float hover_const = 0.937;
-    thrust_scale = (mass * GRAVITY_MSS) / hover_const;
+    // float hover_const = 0.937;
+    thrust_scale = 400.0f;
     frame_height = 0.1f;
 
     ground_behavior = GROUND_BEHAVIOR_FWD_ONLY;
@@ -281,9 +550,12 @@ float Plane::dragCoeff(float alpha) const
 
 
 SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator, float inputRudder, float inputThrust,const struct sitl_input &input, bool fm)
-{   float alpha = angle_of_attack;
+{
+    const bool default_mode = false;
+    if (default_mode) {
+   float alpha = angle_of_attack;
     float radtodeg = 180/(3.14);
-    printf("alpha = %.3f",alpha*radtodeg);
+    // printf("alpha = %.3f",alpha*radtodeg);
 	//calculate aerodynamic torque
     float effective_airspeed = airspeed;
 
@@ -297,65 +569,77 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
         alpha *= constrain_float(1 - inputThrust, 0, 1);
     }
 
-    // const float c_drag_q = coefficient.c_drag_q;
-    // const float c_lift_q = coefficient.c_lift_q;
+
+    const float c_drag_q = coefficient.c_drag_q;
+    const float c_lift_q = coefficient.c_lift_q;
     const float s = coefficient.s;
     const float c = coefficient.c;
     const float b = coefficient.b;
-    // const float c_drag_deltae = coefficient.c_drag_deltae;
-    // const float c_lift_deltae = coefficient.c_lift_deltae;
-    // const float c_y_0 = coefficient.c_y_0;
-    // const float c_y_b = coefficient.c_y_b;
-    // const float c_y_p = coefficient.c_y_p;
-    // const float c_y_r = coefficient.c_y_r;
-    // const float c_y_deltaa = coefficient.c_y_deltaa;
-    // const float c_y_deltar = coefficient.c_y_deltar;
-    // const float c_drag_0 = coefficient.c_drag_0;
-    // const float c_lift_0 = coefficient.c_lift_0;
-    // const float c_l_0 = coefficient.c_l_0;
-    // const float c_l_b = coefficient.c_l_b;
-    // const float c_l_p = coefficient.c_l_p;
-    // const float c_l_r = coefficient.c_l_r;
-    // const float c_l_deltaa = coefficient.c_l_deltaa;
-    // const float c_l_deltar = coefficient.c_l_deltar;
-    // const float c_m_0 = coefficient.c_m_0;
-    //const float c_m_a = coefficient.c_m_a;
-    // float c_m_a;
-    // if (alpha<0){
-    //     c_m_a = 0.06*radtodeg;
-    // }
-    // else if (alpha>0 && alpha<(5/radtodeg))
-    // {
-    //     c_m_a = 0.15*radtodeg;
-    // }
-    // else{
-    //     c_m_a = -0.1*radtodeg;
-    // }
+    const float c_drag_deltae = coefficient.c_drag_deltae;
+    const float c_lift_deltae = coefficient.c_lift_deltae;
+    const float c_y_0 = coefficient.c_y_0;
+    const float c_y_b = coefficient.c_y_b;
+    const float c_y_p = coefficient.c_y_p;
+    const float c_y_r = coefficient.c_y_r;
+    const float c_y_deltaa = coefficient.c_y_deltaa;
+    const float c_y_deltar = coefficient.c_y_deltar;
+    const float c_drag_0 = coefficient.c_drag_0;
+    const float c_lift_0 = coefficient.c_lift_0;
+    const float c_l_0 = coefficient.c_l_0;
+    const float c_l_b = coefficient.c_l_b;
+    const float c_l_p = coefficient.c_l_p;
+    const float c_l_r = coefficient.c_l_r;
+    const float c_l_deltaa = coefficient.c_l_deltaa;
+    const float c_l_deltar = coefficient.c_l_deltar;
+    const float c_m_0 = coefficient.c_m_0;
+    // const float c_m_a = coefficient.c_m_a;
+    float c_m_a;
+    if (alpha<0){
+        c_m_a = 0.06*radtodeg;
+    }
+    else if (alpha>0 && alpha<(5/radtodeg))
+    {
+        c_m_a = 0.15*radtodeg;
+    }
+    else{
+        c_m_a = -0.1*radtodeg;
+    }
     // printf("Cm_alpha=%0.3f",c_m_a);
-    // const float c_m_q = coefficient.c_m_q;
-    // const float c_m_deltae = coefficient.c_m_deltae;
-    // const float c_n_0 = coefficient.c_n_0;
-    // const float c_n_b = coefficient.c_n_b;
-    // const float c_n_p = coefficient.c_n_p;
-    // const float c_n_r = coefficient.c_n_r;
-    // const float c_n_deltaa = coefficient.c_n_deltaa;
-    // const float c_n_deltar = coefficient.c_n_deltar;
+    const float c_m_q = coefficient.c_m_q;
+    const float c_m_deltae = coefficient.c_m_deltae;
+    const float c_n_0 = coefficient.c_n_0;
+    const float c_n_b = coefficient.c_n_b;
+    const float c_n_p = coefficient.c_n_p;
+    const float c_n_r = coefficient.c_n_r;
+    const float c_n_deltaa = coefficient.c_n_deltaa;
+    const float c_n_deltar = coefficient.c_n_deltar;
     const float Lf = 0.858f;    // CG to nose gear (+x) 
     const float Lb = 0.122f;    // CG to main gear (aft)
 
     float rho = air_density;
 
-	// //request lift and drag alpha-coefficients from the corresponding functions
-	// double c_lift_a = liftCoeff(alpha);
-	// double c_drag_a = dragCoeff(alpha);
+	//request lift and drag alpha-coefficients from the corresponding functions
+	double c_lift_a = liftCoeff(alpha);
+	double c_drag_a = dragCoeff(alpha);
 
-	// //convert coefficients to the body frame
-    // double c_x_0 = -c_drag_0*cos(alpha)+c_lift_0*sin(alpha);
-	// double c_x_a = -c_drag_a*cos(alpha)+c_lift_a*sin(alpha);
-	// double c_x_q = -c_drag_q*cos(alpha)+c_lift_q*sin(alpha);
-    // double c_z_0 = -c_drag_0*sin(alpha)-c_lift_0*cos(alpha);
-	// double c_z_a = -c_drag_a*sin(alpha)-c_lift_a*cos(alpha);
-	// double c_z_q = -c_drag_q*sin(alpha)-c_lift_q*cos(alpha);
+	// === CONSOLIDATED AERODYNAMIC COEFFICIENTS ===
+    double p = gyro.x;
+	double q = gyro.y;
+	double r = gyro.z;
+	// Calculate complete lift coefficient CL
+	double CL = c_lift_0 + c_lift_a + c_lift_q*c*q/(2*airspeed) + c_lift_deltae*inputElevator;
+	
+	// Calculate complete drag coefficient CD
+	double CD = c_drag_0 + c_drag_a + c_drag_q*c*q/(2*airspeed) + c_drag_deltae*fabs(inputElevator);
+	
+	// Calculate complete side force coefficient CY
+	double CY = c_y_0 + c_y_b*beta + c_y_p*b*p/(2*airspeed) + c_y_r*b*r/(2*airspeed) + c_y_deltaa*inputAileron + c_y_deltar*inputRudder;
+	
+	// Calculate complete moment coefficients
+	double Cl = c_l_0 + c_l_b*beta + c_l_p*b*p/(2*effective_airspeed) + c_l_r*b*r/(2*effective_airspeed) + c_l_deltaa*inputAileron + c_l_deltar*inputRudder;
+	double Cm = c_m_0 + c_m_a*alpha + c_m_q*c*q/(2*effective_airspeed) + c_m_deltae*inputElevator;
+	double Cn = c_n_0 + c_n_b*beta + c_n_p*b*p/(2*effective_airspeed) + c_n_r*b*r/(2*effective_airspeed) + c_n_deltaa*inputAileron + c_n_deltar*inputRudder;
+
     float throttle;
     if (reverse_thrust) {
         throttle = filtered_servo_angle(input, 2);
@@ -366,34 +650,21 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
     float thrust     = throttle;
     thrust *= thrust_scale;
 
-    double aerocfs[6];
+    // double aerocfs[6];
     
-    float deg_inputa = inputAileron*radtodeg;
-    float deg_inpute = inputElevator*radtodeg;
-    float deg_inputr = inputRudder*radtodeg;
-    float deg_beta = beta*radtodeg;
-    float deg_alpha = alpha*radtodeg;
+    // float deg_inputa = inputAileron*radtodeg;
+    // float deg_inpute = inputElevator*radtodeg;
+    // float deg_inputr = inputRudder*radtodeg;
+    // float deg_beta = beta*radtodeg;
+    // float deg_alpha = alpha*radtodeg;
 
     //printf("thrust = %.3f, throttle = %.3f,inputAileron=%.3f,inputElevator=%.3f",thrust, throttle*100,deg_inputa,deg_inpute);
     fm = 0;
-    aero_interpolate(throttle*100, deg_inputa, deg_inpute, deg_inputr, deg_beta, deg_alpha, aerocfs,fm);
 
-    float CL_direct = aerocfs[0];
-	float CD_direct = aerocfs[1];
-	float CY_direct = aerocfs[2];
-	float Cl_direct = aerocfs[3];
-	float Cm_direct = aerocfs[4];
-	float Cn_direct = aerocfs[5];
-    const float phi = AP::ahrs().get_pitch();
-    float CX_direct = CL_direct*sin(alpha)-CD_direct*cos(alpha)*cos(beta)-CY_direct*cos(alpha)*sin(beta);
-    float CZ_direct = -CL_direct*cos(alpha)-CD_direct*sin(alpha)*cos(beta)-CY_direct*sin(alpha)*sin(beta);    
-    printf("CL=%.3f,CD=%.3f,CY=%.3f,Cl=%.3f,Cm=%.3f,Cn=%.3f",CL_direct,CD_direct,CY_direct,Cl_direct,Cm_direct,Cn_direct);
-    printf("throttle = %.3f, aileron = %.3f, elevator = %.3f, rudder = %.3f, beta = %.3f, alpha = %.3f",throttle*100, deg_inputa, deg_inpute, deg_inputr, deg_beta, deg_alpha);
-	//read angular rates
-	// double p = gyro.x;
-	// double q = gyro.y;
-	// double r = gyro.z;
-    
+    const float theta = AP::ahrs().get_pitch();
+
+
+
     float thrust_offset = 0.091;
 	//calculate aerodynamic force
 	double qbar = 1.0/2.0*rho*pow(airspeed,2)*s; //Calculate dynamic pressure
@@ -411,21 +682,25 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
 		na = 0;
 	}
     else{
-        //float fx_aero_b = qbar*(c_x_0 + c_x_a + c_x_q*c*q/(2*airspeed) - c_drag_deltae*cos(alpha)*fabs(inputElevator) + c_lift_deltae*sin(alpha)*inputElevator);
-		// split c_x_deltae to include "abs" term
-		//float fy_aero_b = qbar*(c_y_0 + c_y_b*beta + c_y_p*b*p/(2*airspeed) + c_y_r*b*r/(2*airspeed) + c_y_deltaa*inputAileron + c_y_deltar*inputRudder);
-		//float fz_aero_b = qbar*(c_z_0 + c_z_a + c_z_q*c*q/(2*airspeed) - c_drag_deltae*sin(alpha)*fabs(inputElevator) - c_lift_deltae*cos(alpha)*inputElevator);
-        float fx_aero_b = qbar*CX_direct;
-        float fy_aero_b = qbar*CY_direct;
-        float fz_aero_b = qbar*CZ_direct;
-        float fz_aero_e = sin(phi)*fx_aero_b + cos(phi)*fz_aero_b;
-        float fz_thrust_e = -thrust*sin(phi);
-        //float l_aero = qbar*b*(c_l_0 + c_l_b*beta + c_l_p*b*p/(2*effective_airspeed) + c_l_r*b*r/(2*effective_airspeed) + c_l_deltaa*inputAileron + c_l_deltar*inputRudder);
-		//float m_aero = qbar*c*(c_m_0 + c_m_a*alpha + c_m_q*c*q/(2*effective_airspeed) + c_m_deltae*inputElevator);
-		//float n_aero = qbar*b*(c_n_0 + c_n_b*beta + c_n_p*b*p/(2*effective_airspeed) + c_n_r*b*r/(2*effective_airspeed) + c_n_deltaa*inputAileron + c_n_deltar*inputRudder);
-        float l_aero = qbar*b*Cl_direct;
-        float m_aero = qbar*c*Cm_direct;
-        float n_aero = qbar*b*Cn_direct;
+        // === NEW CONSOLIDATED FORCE CALCULATIONS ===
+        // Body frame forces using complete coefficients
+        float fx_aero_b = qbar * (CL*sin(alpha) - CD*cos(alpha));
+        float fy_aero_b = qbar * CY;
+        float fz_aero_b = qbar * (-CL*cos(alpha) - CD*sin(alpha));
+        
+        // Legacy calculations (kept for reference/comparison)
+        // float fx_aero_b_legacy = qbar*(c_x_0 + c_x_a + c_x_q*c*q/(2*airspeed) - c_drag_deltae*cos(alpha)*fabs(inputElevator) + c_lift_deltae*sin(alpha)*inputElevator);
+        // float fy_aero_b_legacy = qbar*(c_y_0 + c_y_b*beta + c_y_p*b*p/(2*airspeed) + c_y_r*b*r/(2*airspeed) + c_y_deltaa*inputAileron + c_y_deltar*inputRudder);
+        // float fz_aero_b_legacy = qbar*(c_z_0 + c_z_a + c_z_q*c*q/(2*airspeed) - c_drag_deltae*sin(alpha)*fabs(inputElevator) - c_lift_deltae*cos(alpha)*inputElevator);
+        
+        float fz_aero_e = sin(theta)*fx_aero_b + cos(theta)*fz_aero_b;
+        float fz_thrust_e = -thrust*sin(theta);
+        
+        // === NEW CONSOLIDATED MOMENT CALCULATIONS ===
+        // Moments using complete coefficients
+        float l_aero = qbar*b*Cl;
+		float m_aero = qbar*c*Cm;
+		float n_aero = qbar*b*Cn;
         float m_thrust = thrust*thrust_offset;
     
 
@@ -479,7 +754,7 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
 
         // 2) S1/S2 provisional split (unchanged)
         const float S1 = mass*GRAVITY_MSS + fz_aero_e + fz_thrust_e; // down-positive
-        float cosph_raw = std::cos(phi);
+        float cosph_raw = std::cos(theta);
         float cosph = (std::fabs(cosph_raw) < 0.02f) ? (copysign(0.02f, cosph_raw)) : cosph_raw;
         const float S2 = -(m_aero + m_thrust) / cosph;
         float Nf_prov = ( S2 + Lb*S1 ) / (Lf + Lb);
@@ -643,25 +918,393 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
         // );
 
         // 5) Finish as before: project normals back to BODY and add to aero-only forces
-        std::printf("state=%d fm =%d AGL=%.3f Fz_up=%.1f Nf=%.1f Nb=%.1f\n",
-                    int(air_state),int(fm), AGL_up, Fz_up, Nf, Nb);
+        // std::printf("state=%d fm =%d AGL=%.3f Fz_up=%.1f Nf=%.1f Nb=%.1f\n",
+                    // int(air_state),int(fm), AGL_up, Fz_up, Nf, Nb);
         //std::printf("flightmode = %d,CL=%.5f,CD=%.5f,CM=%.5f,CY=%.5f\n",fm,CL_direct,CD_direct,Cm_direct,CY_direct);
 
-        const float fx_norm_b =  (Nf + Nb) * std::sin(phi);
-        const float fz_norm_b = -(Nf + Nb) * std::cos(phi);
+        const float fx_norm_b =  (Nf + Nb) * std::sin(theta);
+        const float fz_norm_b = -(Nf + Nb) * std::cos(theta);
 
         ax = fx_aero_b + fx_norm_b;   // you return aero + ground only
         ay = fy_aero_b;
         az = fz_aero_b + fz_norm_b;
 
         la = l_aero;
-        ma = m_aero + Nb*Lb*std::cos(phi) - Nf*Lf*std::cos(phi) + m_thrust;
+        ma = m_aero + Nb*Lb*std::cos(theta) - Nf*Lf*std::cos(theta) + m_thrust;
         na = n_aero;
 
 
     }
     return Wrench{ Vector3f(ax, ay, az), Vector3f(la, ma, na) };
 
+    } else {
+        // === ALTERNATIVE FDM MODE ===
+        float alpha = angle_of_attack;
+        const float phi = AP::ahrs().get_roll();
+        const float psi = AP::ahrs().get_yaw();
+
+        float test = phi + psi;
+        test = 0;
+        float radtodeg = 180/(3.14);
+        // printf("alpha = %.3f",alpha*radtodeg);
+        
+        float effective_airspeed = airspeed + test;
+        if (tailsitter || aerobatic) {
+            effective_airspeed += inputThrust * 20;
+            alpha *= constrain_float(1 - inputThrust, 0, 1);
+        }
+
+        // Basic aircraft geometry parameters
+        const float s = coefficient.s;
+        const float c = coefficient.c;
+        const float Lf = 0.858f;    // CG to nose gear (+x) 
+        const float Lb = 0.122f;    // CG to main gear (aft)
+        float rho = air_density;
+
+        // Throttle handling
+        float throttle;
+        if (reverse_thrust) {
+            throttle = filtered_servo_angle(input, 2);
+        } else {
+            throttle = filtered_servo_range(input, 2);
+        }
+        
+        float thrust = throttle;
+        thrust *= thrust_scale;
+
+        // Angular rates
+        // double p = gyro.x;
+        double q = gyro.y;
+        // double r = gyro.z;
+        
+        // Takeoff/cruise mode determination based on speed
+        bool takeoff_mode = (airspeed <= 30.0f);
+        
+        // Control surface angles based on mode
+        double del_e_deg = inputElevator * radtodeg;
+        double del_a_deg = takeoff_mode ? 40.0 : 0.0;  // ailerons
+        double del_f_deg = takeoff_mode ? 40.0 : 0.0;  // flaps
+        
+        // Alpha conditioning: force to 0 at low speeds, then clamp to ±20°
+        double alpha_deg_raw = alpha * radtodeg;
+        double alpha_deg;
+        if (airspeed < 5.0f) {
+            alpha_deg = 0.0;  // Force alpha to 0 below 5 m/s
+        } else {
+            alpha_deg = clamp_alpha(alpha_deg_raw);  // Clamp to ±20° at higher speeds
+        }
+        
+        // Compute C_mu for propeller effects
+        double n = compute_n_from_throttle(throttle);
+        double D_prop = 0.120;  // Propeller diameter in meters
+        double V_inf = (double)airspeed;
+        double C_mu = compute_Cmu(V_inf, n, D_prop);
+        
+        // Calculate J for display purposes
+        double Vsafe = (V_inf < 0.1) ? 0.1 : V_inf;
+        double n_safe = (n < 1e-3) ? 1e-3 : n;
+        double J_display = Vsafe / (n_safe * D_prop);
+        
+        // === UNIFIED MODEL CALCULATIONS ===
+        double CL_unified, CD_unified;
+        
+        if (takeoff_mode) {
+            CL_unified = compute_CL_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu);
+            CD_unified = compute_CD_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu, CL_unified);
+        } else {
+            CL_unified = compute_CL_cruise_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu);
+            CD_unified = compute_CD_cruise_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu, CL_unified);
+        }
+        
+
+        const float theta = AP::ahrs().get_pitch();
+        float thrust_offset = 0.03;
+        double qbar = 1.0/2.0*rho*pow(airspeed,2)*s;
+        float ax = 0.0f, ay = 0.0f, az = 0.0f;
+        float la = 0.0f, ma = 0.0f, na = 0.0f;
+
+        if (is_zero(airspeed)) {
+            ax = ay = az = la = ma = na = 0.0f;
+        } 
+        
+        else {
+            // === ALTERNATIVE FORCE CALCULATIONS ===
+            // Body frame forces using unified coefficients (use conditioned alpha)
+            double alpha_rad_conditioned = alpha_deg * M_PI / 180.0;
+            float fx_aero_b = qbar * (CL_unified*sin(alpha_rad_conditioned) - CD_unified*cos(alpha_rad_conditioned));
+            float fy_aero_b = 0.0f;  // Set to zero as requested
+            float fz_aero_b = qbar * (-CL_unified*cos(alpha_rad_conditioned) - CD_unified*sin(alpha_rad_conditioned));
+            
+            float fz_aero_e = sin(theta)*fx_aero_b + cos(theta)*fz_aero_b;
+            float fz_thrust_e = -thrust*sin(theta);
+            
+            // === MOMENT CALCULATIONS ===
+            float l_aero = 0.0f;  // Set to zero as requested
+            
+            // Compute moment coefficient using pre-stall functions
+            double Cm_unified;
+            if (takeoff_mode) {
+                // Use takeoff pre-stall function
+                Cm_unified = 2.1932 - 0.0353 * alpha_deg - 0.0721 * del_e_deg - 0.1756 * del_f_deg + 0.1404 * del_a_deg + 
+                            0.2216 * C_mu + 0.1007 * alpha_deg * C_mu;
+            } else {
+                // Use cruise pre-stall function
+                Cm_unified = 0.1970 - 0.0621 * alpha_deg - 0.0832 * del_e_deg + 0.0000 * del_f_deg - 0.0019 * del_a_deg + 
+                            1.5824 * C_mu + 0.2833 * alpha_deg * C_mu;
+            }
+
+            const double Cm_q = -95.2255;  // Pitch damping coefficient
+            //const double Cm_q = 0.0;  // Pitch damping coefficient
+            double airspeed_safe = (airspeed < 1e-3) ? 1e-3 : airspeed;  // Prevent division by very small airspeed
+            double CM_q_contribution = Cm_q * q * c / (2.0 * airspeed_safe);
+         
+             float m_aero = qbar*c*(Cm_unified+CM_q_contribution) ;
+             
+             float n_aero = 0.0f;  // Set to zero as requested
+             float m_thrust = thrust*thrust_offset;
+
+
+
+            // === GROUND MODEL (same as default mode) ===
+            // Tunables
+            const float FORCE_MARGIN         = 0.02f;
+            const int   FORCE_HOLD_FRAMES    = 5;
+            const float ALT_HYSTERESIS       = 0.010f;
+            const float PEN_ENGAGE           = 0.005f;
+            const float MIN_LOAD_N           = 0.1f;
+            const int   ALT_STABLE_FRAMES    = 5000;
+            const float ALT_STABLE_TOL       = 0.002f;
+            const float VZ_TOUCH_THRESH      = 0.6f;
+
+            // Geometry
+            const Vector3f rNose_b(+Lf, 0.0f, frame_height);
+            const Vector3f rMain_b(-Lb, 0.0f, frame_height);
+            const Vector3f rNose_e = dcm.transposed() * rNose_b;
+            const Vector3f rMain_e = dcm.transposed() * rMain_b;
+
+            Vector3f locned;
+            bool alt_gotten = AP::ahrs().get_relative_position_NED_origin_float(locned);
+            const float origin_hagl_up = alt_gotten ? -locned.z : 0.0f;
+
+            const float wheelNose_world_z = locned.z + rNose_e.z;
+            const float wheelMain_world_z = locned.z + rMain_e.z;
+
+            static float ground_wheel_z_touch = 0.0f;
+            static bool  ground_wheel_z_latched = false;
+
+            float wheelNose_AGL_up, wheelMain_AGL_up;
+            if (ground_wheel_z_latched) {
+                wheelNose_AGL_up = ground_wheel_z_touch - wheelNose_world_z;
+                wheelMain_AGL_up = ground_wheel_z_touch - wheelMain_world_z;
+            } else {
+                wheelNose_AGL_up = -wheelNose_world_z;
+                wheelMain_AGL_up = -wheelMain_world_z;
+            }
+            wheelNose_AGL_up = std::max(0.0f, wheelNose_AGL_up);
+            wheelMain_AGL_up = std::max(0.0f, wheelMain_AGL_up);
+            const float minWheel_AGL_up = std::min(wheelNose_AGL_up, wheelMain_AGL_up);
+            const float AGL_up = minWheel_AGL_up;
+
+            const float S1 = mass*GRAVITY_MSS + fz_aero_e + fz_thrust_e;
+            float cosph_raw = std::cos(theta);
+            float cosph = (std::fabs(cosph_raw) < 0.02f) ? (copysign(0.02f, cosph_raw)) : cosph_raw;
+            const float S2 = -(m_aero + m_thrust) / cosph;
+            float Nf_prov = ( S2 + Lb*S1 ) / (Lf + Lb);
+            float Nb_prov = ( Lf*S1 - S2 ) / (Lf + Lb);
+            Nf_prov = std::max(0.0f, Nf_prov);
+            Nb_prov = std::max(0.0f, Nb_prov);
+
+            const float lift_up   = -fz_aero_e;
+            const float thrust_up = -fz_thrust_e;
+            const float Fz_up     = lift_up + thrust_up;
+
+            static float Fz_up_f = 0.0f;
+            const float EMA = 0.3f;
+            Fz_up_f = (1.0f - EMA) * Fz_up_f + EMA * Fz_up;
+
+            const bool force_exceeds = (Fz_up_f > mass*GRAVITY_MSS * (1.0f + FORCE_MARGIN));
+            const bool force_below   = (Fz_up_f < mass*GRAVITY_MSS * (1.0f - FORCE_MARGIN));
+
+            static float alt_last = 0.0f;
+            static int   alt_stable_cnt = 0;
+            static bool has_taken_off = false;
+            if (alt_gotten) {
+                const float dalt = fabsf(origin_hagl_up - alt_last);
+                if (dalt <= ALT_STABLE_TOL) {
+                    alt_stable_cnt++;
+                } else {
+                    alt_stable_cnt = 0;
+                }
+                alt_last = origin_hagl_up;
+            } else {
+                alt_stable_cnt = 0;
+            }
+
+            enum class AirState : uint8_t { GROUND, FORCE_OK, AIRBORNE };
+            static AirState air_state = AirState::GROUND;
+            static int force_cnt = 0;
+
+            float Nf = 0.0f, Nb = 0.0f;
+
+            switch (air_state) {
+            case AirState::GROUND:
+            {
+                if (!ground_wheel_z_latched && alt_gotten) {
+                    ground_wheel_z_touch = std::min(wheelNose_world_z, wheelMain_world_z);
+                    ground_wheel_z_latched = true;
+                    std::printf("DBG: initial-ground latch wheel_z_touch=%.3f (down-pos)\n", ground_wheel_z_touch);
+                }
+
+                Nf = (Nf_prov > MIN_LOAD_N) ? Nf_prov : 0.0f;
+                Nb = (Nb_prov > MIN_LOAD_N) ? Nb_prov : 0.0f;
+
+                force_cnt = force_exceeds ? (force_cnt + 1) : 0;
+                if (force_cnt >= FORCE_HOLD_FRAMES) {
+                    air_state = AirState::FORCE_OK;
+                    force_cnt = 0;
+                }
+                break;
+            }
+
+            case AirState::FORCE_OK:
+            {
+                Nf = (Nf_prov > MIN_LOAD_N) ? Nf_prov : 0.0f;
+                Nb = (Nb_prov > MIN_LOAD_N) ? Nb_prov : 0.0f;
+                fm = 1;
+                if (AGL_up >= ALT_HYSTERESIS) {
+                    air_state = AirState::AIRBORNE;
+                    has_taken_off = true; 
+                    ground_wheel_z_latched = false;
+                    Nf = Nb = 0.0f;
+                    break;
+                }
+
+                if (!has_taken_off && force_below) {
+                    air_state = AirState::GROUND;
+                    force_cnt = 0;
+                }
+                break;
+            }
+
+            case AirState::AIRBORNE:
+            {
+                Nf = Nb = 0.0f;
+                fm = 1;
+
+                const bool nose_touch = (wheelNose_AGL_up <= PEN_ENGAGE);
+                const bool main_touch = (wheelMain_AGL_up <= PEN_ENGAGE);
+                if (nose_touch || main_touch) {
+                    air_state = AirState::GROUND;
+                    printf("CONDITION1\n");
+                    Nf = (Nf_prov > MIN_LOAD_N) ? Nf_prov : 0.0f;
+                    Nb = (Nb_prov > MIN_LOAD_N) ? Nb_prov : 0.0f;
+                    ground_wheel_z_touch = main_touch ? wheelMain_world_z : wheelNose_world_z;
+                    ground_wheel_z_latched = true;
+                    has_taken_off = false;
+                    std::printf("DBG: wheel-touch touchdown latched wheel_z_touch=%.3f (down-pos)\n", ground_wheel_z_touch);
+                    force_cnt = 0;
+                    break;
+                }
+
+                const float vz_down = velocity_ef.z;
+                static int touchdown_force_cnt = 0;
+                if (Fz_up_f<10 && fabsf(vz_down) < VZ_TOUCH_THRESH && alt_stable_cnt >= ALT_STABLE_FRAMES) {
+                    touchdown_force_cnt++;
+                } else {
+                    touchdown_force_cnt = 0;
+                }
+                if (touchdown_force_cnt >= FORCE_HOLD_FRAMES) {
+                    printf("CONDITION2\n");
+                    air_state = AirState::GROUND;
+                    fm=0;
+                    Nf = (Nf_prov > MIN_LOAD_N) ? Nf_prov : 0.0f;
+                    Nb = (Nb_prov > MIN_LOAD_N) ? Nb_prov : 0.0f;
+                    ground_wheel_z_touch = std::min(wheelNose_world_z, wheelMain_world_z);
+                    ground_wheel_z_latched = true;
+                    has_taken_off = false;
+                    touchdown_force_cnt = 0;
+                    std::printf("DBG: force+stable-alt touchdown latched wheel_z_touch=%.3f (down-pos)\n", ground_wheel_z_touch);
+                    break;
+                }
+                break;
+            }
+            }
+
+            // std::printf("ALT_FDM: state=%d fm=%d AGL=%.3f Fz_up=%.1f Nf=%.1f Nb=%.1f\n",
+                        // int(air_state), int(fm), AGL_up, Fz_up, Nf, Nb);
+
+            const float fx_norm_b =  (Nf + Nb) * std::sin(theta);
+            const float fz_norm_b = -(Nf + Nb) * std::cos(theta);
+
+            ax = fx_aero_b + fx_norm_b;
+            ay = fy_aero_b;
+            az = fz_aero_b + fz_norm_b;
+
+            la = l_aero;
+            ma = m_aero - Nb*Lb*std::cos(theta) + Nf*Lf*std::cos(theta) + m_thrust;
+            na = n_aero;
+
+             // Calculate actual forces for debugging
+             float total_lift_force = qbar * CL_unified;
+             float total_drag_force = qbar * CD_unified;
+             float pitch_deg = theta * radtodeg;  // Convert pitch from radians to degrees
+             float v_z = velocity_ef.z;  // Vertical speed (down-positive in NED)
+             
+             printf("ALT_FDM: Mode=%s Vinf=%.2f Pitch=%.2f Vz=%.2f | Alpha=%.2f(raw=%.2f) Del_e=%.2f Del_a=%.2f Del_f=%.2f Del_r=%.2f | J=%.3f Cmu=%.4f | CL=%.4f Lift=%.1f CD=%.4f Drag=%.1f Cm=%.4f PitchMom=%.1f\n", 
+                     takeoff_mode ? "TKOFF" : "CRUISE", airspeed, pitch_deg, v_z, alpha_deg, alpha_deg_raw, del_e_deg, del_a_deg, del_f_deg, inputRudder*radtodeg, 
+                     J_display, C_mu, CL_unified, total_lift_force, CD_unified, total_drag_force, ma/(0.5*rho*sq(airspeed)*c*s), ma);
+
+             // CSV Logging at 10 Hz with timestamped files - saved automatically on SITL disconnect/shutdown
+             static bool csv_header_written = false;
+             static bool log_initialized = false;
+             static uint64_t last_log_time_ms = 0;
+             const uint64_t LOG_INTERVAL_MS = 100;  // 100ms = 10 Hz logging rate
+             
+             uint64_t current_time_ms = AP_HAL::millis64();
+             
+             // Initialize logging on first call - create timestamped filename and register shutdown handlers
+             if (!log_initialized) {
+                 time_t rawtime;
+                 struct tm * timeinfo;
+                 time(&rawtime);
+                 timeinfo = localtime(&rawtime);
+                 snprintf(g_current_filename, sizeof(g_current_filename), 
+                         "alt_fdm_log_%04d%02d%02d_%02d%02d%02d.csv",
+                         timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
+                         timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+                 
+                 g_csv_file = fopen(g_current_filename, "w");
+                 log_initialized = true;
+                 last_log_time_ms = current_time_ms;  // Initialize timing
+                 
+                 // Register shutdown handlers to save file on SITL disconnect
+                 atexit(cleanup_csv_logging);
+                 signal(SIGINT, signal_handler);   // Ctrl+C
+                 signal(SIGTERM, signal_handler);  // Termination request
+                 signal(SIGHUP, signal_handler);   // Hang up (connection lost)
+                 
+                 printf("LOG: Started new ALT_FDM session log file at 10 Hz: %s\n", g_current_filename);
+                 printf("LOG: Registered shutdown handlers - file will be saved on SITL disconnect\n");
+             }
+             
+             // Write header if needed
+             if (g_csv_file && !csv_header_written) {
+                 fprintf(g_csv_file, "timestamp_ms,mode,airspeed,pitch_deg,v_z,alpha_deg,alpha_raw,del_e,del_a,del_f,del_r,n,J,C_mu,CL,lift_force,CD,drag_force,Cm,pitch_moment,throttle\n");
+                 csv_header_written = true;
+             }
+             
+             // Write data row only at 10 Hz (every 100ms)
+             if (g_csv_file && (current_time_ms - last_log_time_ms >= LOG_INTERVAL_MS)) {
+                 fprintf(g_csv_file, "%" PRIu64 ",%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.3f,%.4f,%.4f,%.1f,%.4f,%.1f,%.4f,%.1f,%.3f\n",
+                         current_time_ms, takeoff_mode ? "TKOFF" : "CRUISE", airspeed, pitch_deg, v_z, alpha_deg, alpha_deg_raw, del_e_deg, del_a_deg, del_f_deg, inputRudder*radtodeg,
+                         n, J_display, C_mu, CL_unified, total_lift_force, CD_unified, total_drag_force, ma/(0.5*rho*sq(airspeed)*c*s), ma, throttle);
+                 fflush(g_csv_file);  // Ensure data is written immediately
+                 last_log_time_ms = current_time_ms;  // Update last log time
+             }
+        }
+        return Wrench{ Vector3f(ax, ay, az), Vector3f(la, ma, na) };
+    }
+    return Wrench{ Vector3f(0, 0, 0), Vector3f(0, 0, 0) };
 }
 void Plane::calculate_forces(const struct sitl_input &input, Vector3f &rot_accel, bool fm)
 {
@@ -839,141 +1482,3 @@ void Plane::update(const struct sitl_input &input)
 
 
 
-
-
-
-
-
-
-
-// Torque calculation function
-// Vector3f Plane::getTorque(float inputAileron, float inputElevator, float inputRudder, float inputThrust, const Vector3f &force) const
-// {
-//     float alpha = angle_of_attack;
-
-// 	//calculate aerodynamic torque
-//     float effective_airspeed = airspeed;
-
-//     if (tailsitter || aerobatic) {
-//         /*
-//           tailsitters get airspeed from prop-wash
-//          */
-//         effective_airspeed += inputThrust * 20;
-
-//         // reduce effective angle of attack as thrust increases
-//         alpha *= constrain_float(1 - inputThrust, 0, 1);
-//     }
-    
-//     const float s = coefficient.s;
-//     const float c = coefficient.c;
-//     const float b = coefficient.b;
-//     const float c_l_0 = coefficient.c_l_0;
-//     const float c_l_b = coefficient.c_l_b;
-//     const float c_l_p = coefficient.c_l_p;
-//     const float c_l_r = coefficient.c_l_r;
-//     const float c_l_deltaa = coefficient.c_l_deltaa;
-//     const float c_l_deltar = coefficient.c_l_deltar;
-//     const float c_m_0 = coefficient.c_m_0;
-//     const float c_m_a = coefficient.c_m_a;
-//     const float c_m_q = coefficient.c_m_q;
-//     const float c_m_deltae = coefficient.c_m_deltae;
-//     const float c_n_0 = coefficient.c_n_0;
-//     const float c_n_b = coefficient.c_n_b;
-//     const float c_n_p = coefficient.c_n_p;
-//     const float c_n_r = coefficient.c_n_r;
-//     const float c_n_deltaa = coefficient.c_n_deltaa;
-//     const float c_n_deltar = coefficient.c_n_deltar;
-//     const Vector3f &CGOffset = coefficient.CGOffset;
-    
-//     float rho = air_density;
-
-// 	//read angular rates
-// 	double p = gyro.x;
-// 	double q = gyro.y;
-// 	double r = gyro.z;
-
-// 	double qbar = 1.0/2.0*rho*pow(effective_airspeed,2)*s; //Calculate dynamic pressure
-// 	double la, na, ma;
-// 	if (is_zero(effective_airspeed))
-// 	{
-// 		la = 0;
-// 		ma = 0;
-// 		na = 0;
-// 	}
-// 	else
-// 	{
-// 		la = qbar*b*(c_l_0 + c_l_b*beta + c_l_p*b*p/(2*effective_airspeed) + c_l_r*b*r/(2*effective_airspeed) + c_l_deltaa*inputAileron + c_l_deltar*inputRudder);
-// 		ma = qbar*c*(c_m_0 + c_m_a*alpha + c_m_q*c*q/(2*effective_airspeed) + c_m_deltae*inputElevator);
-// 		na = qbar*b*(c_n_0 + c_n_b*beta + c_n_p*b*p/(2*effective_airspeed) + c_n_r*b*r/(2*effective_airspeed) + c_n_deltaa*inputAileron + c_n_deltar*inputRudder);
-// 	}
-
-
-// 	// Add torque to force misalignment with CG
-// 	// r x F, where r is the distance from CoG to CoL
-// 	la +=  CGOffset.y * force.z - CGOffset.z * force.y;
-// 	ma += -CGOffset.x * force.z + CGOffset.z * force.x;
-// 	na += -CGOffset.y * force.x + CGOffset.x * force.y;
-
-// 	return Vector3f(la, ma, na);
-// }
-
-// // Force calculation function from last_letter
-// Vector3f Plane::getForce(float inputAileron, float inputElevator, float inputRudder) const
-// {
-//     const float alpha = angle_of_attack;
-//     const float c_drag_q = coefficient.c_drag_q;
-//     const float c_lift_q = coefficient.c_lift_q;
-//     const float s = coefficient.s;
-//     const float c = coefficient.c;
-//     const float b = coefficient.b;
-//     const float c_drag_deltae = coefficient.c_drag_deltae;
-//     const float c_lift_deltae = coefficient.c_lift_deltae;
-//     const float c_y_0 = coefficient.c_y_0;
-//     const float c_y_b = coefficient.c_y_b;
-//     const float c_y_p = coefficient.c_y_p;
-//     const float c_y_r = coefficient.c_y_r;
-//     const float c_y_deltaa = coefficient.c_y_deltaa;
-//     const float c_y_deltar = coefficient.c_y_deltar;
-//     const float c_drag_0 = coefficient.c_drag_0;
-//     const float c_lift_0 = coefficient.c_lift_0;
-    
-
-
-//     float rho = air_density;
-
-// 	//request lift and drag alpha-coefficients from the corresponding functions
-// 	double c_lift_a = liftCoeff(alpha);
-// 	double c_drag_a = dragCoeff(alpha);
-
-// 	//convert coefficients to the body frame
-//     double c_x_0 = -c_drag_0*cos(alpha)+c_lift_0*sin(alpha);
-// 	double c_x_a = -c_drag_a*cos(alpha)+c_lift_a*sin(alpha);
-// 	double c_x_q = -c_drag_q*cos(alpha)+c_lift_q*sin(alpha);
-//     double c_z_0 = -c_drag_0*sin(alpha)-c_lift_0*cos(alpha);
-// 	double c_z_a = -c_drag_a*sin(alpha)-c_lift_a*cos(alpha);
-// 	double c_z_q = -c_drag_q*sin(alpha)-c_lift_q*cos(alpha);
-
-// 	//read angular rates
-// 	double p = gyro.x;
-// 	double q = gyro.y;
-// 	double r = gyro.z;
-
-// 	//calculate aerodynamic force
-// 	double qbar = 1.0/2.0*rho*pow(airspeed,2)*s; //Calculate dynamic pressure
-// 	double ax, ay, az;
-// 	if (is_zero(airspeed))
-// 	{
-// 		ax = 0;
-// 		ay = 0;
-// 		az = 0;
-// 	}
-// 	else
-// 	{
-// 		ax = qbar*(c_x_0 + c_x_a + c_x_q*c*q/(2*airspeed) - c_drag_deltae*cos(alpha)*fabs(inputElevator) + c_lift_deltae*sin(alpha)*inputElevator);
-// 		// split c_x_deltae to include "abs" term
-// 		ay = qbar*(c_y_0 + c_y_b*beta + c_y_p*b*p/(2*airspeed) + c_y_r*b*r/(2*airspeed) + c_y_deltaa*inputAileron + c_y_deltar*inputRudder);
-// 		az = qbar*(c_z_0 + c_z_a + c_z_q*c*q/(2*airspeed) - c_drag_deltae*sin(alpha)*fabs(inputElevator) - c_lift_deltae*cos(alpha)*inputElevator);
-// 		// split c_z_deltae to include "abs" term
-// 	}
-//     return Vector3f(ax, ay, az);
-// }
