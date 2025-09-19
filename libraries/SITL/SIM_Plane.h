@@ -44,11 +44,6 @@ public:
         return NEW_NOTHROW Plane(frame_str);
     }
 
-protected:
-    const float hover_throttle = 0.7f;
-    float angle_of_attack;
-    float beta;
-
     const struct Coefficients {
         float s = 0.9;
         float b = 3;
@@ -90,11 +85,53 @@ protected:
         float deltae_max = 0.3491;
         float deltar_max = 0.3491;
 
+        // ====================================================================
+        // UNIFIED AERODYNAMIC MODEL COEFFICIENTS
+        // ====================================================================
+        // CL coefficients for unified model
+        float cl_base_0 = 0.195343;
+        float cl_base_alpha = 0.111981;
+        float cl_deltae = 0.015900;
+        float cl_deltaf = 0.009675;
+        float cl_deltaa_L = 0.006162;
+        float cl_deltaa_R = 0.006168;
+        float cl_cmu = 2.252691;
+        float cl_alpha_cmu = 0.031598;
+        
+        // CD coefficients for unified model
+        float cd_base_0 = 0.071087;
+        float cd_deltae = 0.000139;
+        float cd_deltaf = 0.005921;
+        float cd_deltaa_L = 0.001166;
+        float cd_deltaa_R = 0.003391;
+        float cd_cmu = 1.273205;
+        float cd_alpha_cmu = 0.064856;
+        float cd_k_base = 0.046;
+        float cd_k_controls = 0.01 / 120.0;
+        
+        // CM coefficients for unified model
+        float cm_base_0 = 0.340124;
+        float cm_base_alpha = -0.035189;
+        float cm_deltae = -0.077253;
+        float cm_deltaf = 0.008949;
+        float cm_deltaa_L = 0.001488;
+        float cm_deltaa_R = 0.000651;
+        float cm_cmu = 0.603072;
+        float cm_alpha_cmu = 0.079124;
+        float cm_alpha_deltae = -0.000863;
+        float cm_post_stall_0 = -0.343986;
+        float cm_post_stall_cl = -1.359063;
+
         Vector3f CGOffset{0, 0, 0};
 
     } default_coefficients;
 
     struct Coefficients coefficient;
+
+protected:
+    const float hover_throttle = 0.7f;
+    float angle_of_attack;
+    float beta;
 
     float thrust_scale;
     bool reverse_thrust;
