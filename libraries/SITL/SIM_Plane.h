@@ -50,9 +50,9 @@ protected:
     float beta;
 
     const struct Coefficients {
-        float s = 0.45;
-        float b = 1.88;
-        float c = 0.24;
+        float s = 0.9;
+        float b = 3;
+        float c = 0.3;
         float c_lift_0 = 0.56;
         float c_lift_deltae = 0;
         float c_lift_a = 6.9;
