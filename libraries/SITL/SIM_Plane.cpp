@@ -116,16 +116,38 @@ static inline double compute_CL_takeoff_unified(double alpha, double delta_e, do
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu, CL_measured
  * Output: CD
  */
-static inline double compute_CD_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
-    // Use your existing CD calculation with modifications for cruise configuration
-    double CD0c = -0.51403 * C_mu + 0.107575;
-    double CD0_del_f_term = 0.01285 * delta_f + 0.0021;
-    double CD0 = CD0c + 0.0038 * delta_e + CD0_del_f_term + 0.0015 * delta_a + 1.322175 * C_mu;
+ static inline double compute_CD_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
+    // CD0 calculation for cruise
+    double CD0 = 0.070434 + 0.000723 * delta_e + 0.000000 * delta_f + 0.000769 * delta_a + 1.336954 * C_mu + 0.085235 * alpha * C_mu;
     
-    // k interpolation for cruise (0 deg flaps)
-    double k = 0.046;
+    // Effective angle of attack calculation
+    double alpha_eff;
+    if (alpha >= 0) {
+        alpha_eff = alpha + 0.113163 * delta_e;
+    } else {
+        alpha_eff = alpha + 0.200000 * delta_e;
+    }
     
-    double CD = CD0 + k * (CL_meas * CL_meas);
+    // Convert effective alpha to radians for calculations
+    double alpha_eff_rad = alpha_eff * M_PI / 180.0;
+    
+    // Stall parameter sigma calculation
+    double sigma;
+    if (alpha >= 0) {
+        double exp_neg = exp(-5.000000 * (alpha_eff_rad - 0.052360));
+        double exp_pos = exp(5.000000 * (alpha_eff_rad + 0.052360));
+        sigma = (1 + exp_neg + exp_pos) / ((1 + exp_neg) * (1 + exp_pos));
+    } else {
+        double exp_neg = exp(-119.999988 * (alpha_eff_rad - 0.052360));
+        double exp_pos = exp(119.999988 * (alpha_eff_rad + 0.052360));
+        sigma = (1 + exp_neg + exp_pos) / ((1 + exp_neg) * (1 + exp_pos));
+    }
+    
+    // Final CD calculation with stall-aware behavior
+    double CD_normal = 0.046000 * CL_meas * CL_meas;
+    double CD_stall = 2.000000 * sin(alpha_eff_rad) * sin(alpha_eff_rad);
+    double CD = (1.0 - sigma) * CD_normal + sigma * CD_stall + CD0;
+    
     return clamp_double(CD, 0.0, 3.0);
 }
 
@@ -134,19 +156,40 @@ static inline double compute_CD_cruise_unified(double alpha, double delta_e, dou
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu, CL_measured
  * Output: CD
  */
-static inline double compute_CD_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
-    // Use your existing CD calculation with modifications for takeoff configuration
-    double CD0c = -0.51403 * C_mu + 0.107575;
-    double CD0_del_f_term = 0.01285 * delta_f + 0.0021;
-    double CD0 = CD0c + 0.0038 * delta_e + CD0_del_f_term + 0.0015 * delta_a + 1.322175 * C_mu;
+ static inline double compute_CD_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
+    // CD0 calculation for takeoff
+    double CD0 = 84.762851 + 0.001273 * delta_e + (-2.113864) * (delta_f + delta_a)/2.0 + 1.745522 * C_mu + 0.107359 * alpha * C_mu;
     
-    // k interpolation for takeoff (40 deg flaps)
-    double k = 0.056;
+    // Effective angle of attack calculation
+    double alpha_eff;
+    if (alpha >= 0) {
+        alpha_eff = alpha + (-0.007801) * delta_e;
+    } else {
+        alpha_eff = alpha + 0.117995 * delta_e;
+    }
     
-    double CD = CD0 + k * (CL_meas * CL_meas);
+    // Convert effective alpha to radians for calculations
+    double alpha_eff_rad = alpha_eff * M_PI / 180.0;
+    
+    // Stall parameter sigma calculation
+    double sigma;
+    if (alpha >= 0) {
+        double exp_neg = exp(-120.000000 * (alpha_eff_rad - 0.129117));
+        double exp_pos = exp(120.000000 * (alpha_eff_rad + 0.129117));
+        sigma = (1 + exp_neg + exp_pos) / ((1 + exp_neg) * (1 + exp_pos));
+    } else {
+        double exp_neg = exp(-80.229151 * (alpha_eff_rad - 0.343093));
+        double exp_pos = exp(80.229151 * (alpha_eff_rad + 0.343093));
+        sigma = (1 + exp_neg + exp_pos) / ((1 + exp_neg) * (1 + exp_pos));
+    }
+    
+    // Final CD calculation with stall-aware behavior
+    double CD_normal = 0.056000 * CL_meas * CL_meas;
+    double CD_stall = 2.000000 * sin(alpha_eff_rad) * sin(alpha_eff_rad);
+    double CD = (1.0 - sigma) * CD_normal + sigma * CD_stall + CD0;
+    
     return clamp_double(CD, 0.0, 3.0);
 }
-
 
 /*
  * Cruise Unified Cm
@@ -328,7 +371,7 @@ static char g_current_filename[256] = {0};
 // When enabled, logs flight data at 10 Hz to timestamped CSV files
 // Files are automatically saved when SITL disconnects
 // Set to false to disable logging completely (saves CPU and disk space)
-static const bool ENABLE_CSV_LOGGING = false;  // Change to false to disable logging
+static const bool ENABLE_CSV_LOGGING = true;  // Change to false to disable logging
 
 // Shutdown handler - called when SITL disconnects/terminates
 static void cleanup_csv_logging() {
@@ -370,8 +413,8 @@ Plane::Plane(const char *frame_str) :
        scaling from motor power to Newtons. Allows the plane to hold
        vertically against gravity when the motor is at hover_throttle
     */
-    // float hover_const = 0.937;
-    thrust_scale = 400.0f;
+    // float hover_const = 0.937; thrust_scale = 400.0f;
+    thrust_scale = 630.0f; 
     frame_height = 0.1f;
 
     ground_behavior = GROUND_BEHAVIOR_FWD_ONLY;
