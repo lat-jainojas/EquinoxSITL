@@ -42,191 +42,180 @@ static inline double clamp_double(double v, double lo, double hi) {
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
  * Output: CL
  */
- static inline double compute_CL_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
-    // Compute alpha_eff using equations Henil gave. (The constants are correct)
-    double alpha_eff;
-    if (alpha >= 0) {
-        alpha_eff = alpha + 0.013075 * delta_e;
-    } else {
-        alpha_eff = alpha + 0.011856 * delta_e;
-    }
-    
-    // Compute sigma from Henil's equations. (The constants are correct)
-    double sigma;
-    if (alpha >= 0) {
-        double exp1 = exp(-54.313499 * (alpha_eff * M_PI/180.0 - 0.242341));
-        double exp2 = exp(54.313499 * (alpha_eff * M_PI/180.0 + 0.242341));
-        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
-    } else {
-        double exp1 = exp(-105.054189 * (alpha_eff * M_PI/180.0 - 0.320475));
-        double exp2 = exp(105.054189 * (alpha_eff * M_PI/180.0 + 0.320475));
-        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
-    }
-    
-    // Compute CL
-    double alpha_eff_rad = alpha_eff * M_PI/180.0;
-    double linear_part = (1 - sigma) * (0.234971 + 0.114862 * alpha);
-    double stall_part = sigma * 2 * copysign(1.0, alpha_eff) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
-    
-    double CL = linear_part + stall_part + 0.016539 * delta_e + 0.0 * delta_f - 0.000220 * delta_a + 
-               2.138917 * C_mu - 0.020904 * alpha * C_mu + 0.000212 * alpha * delta_e;
-    
-    return clamp_double(CL, -1.0, 4.5);
+ // ...existing code...
+static inline double compute_CL_cruise_unified(double alpha_deg, double de, double df, double da_L, double da_R, double Cmu) {
+    double alpha_rad = alpha_deg * M_PI / 180.0;
+    double sigma = (1 + exp(-18.080 * (alpha_rad - (16.345 * M_PI / 180.0))) + exp(18.080 * (alpha_rad + (16.345 * M_PI / 180.0))))
+                 / ((1 + exp(-18.080 * (alpha_rad - (16.345 * M_PI / 180.0)))) * (1 + exp(18.080 * (alpha_rad + (16.345 * M_PI / 180.0)))));
+    double CL = (1 - sigma) * (0.195343 + 0.111981 * alpha_deg)
+              + sigma * (2.0 * copysign(1.0, alpha_rad) * pow(sin(alpha_rad), 2) * cos(alpha_rad))
+              + (0.015900 * de + 0.009675 * df + 0.006162 * da_L + 0.006168 * da_R
+                 + 2.252691 * Cmu + 0.031598 * (alpha_deg * Cmu));
+    return clamp_double(CL, -1.5, 5);
 }
 
-/*
- * Takeoff Unified CL
- * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
- * Output: CL
- */
-static inline double compute_CL_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
-    // Compute alpha_eff
-    double alpha_eff;
-    if (alpha >= 0) {
-        alpha_eff = alpha + 0.003620 * delta_e;
-    } else {
-        alpha_eff = alpha + 0.102771 * delta_e;
-    }
-    
-    // Compute sigma
-    double sigma;
-    if (alpha >= 0) {
-        double exp1 = exp(-119.984333 * (alpha_eff * M_PI/180.0 - 0.349066));
-        double exp2 = exp(119.984333 * (alpha_eff * M_PI/180.0 + 0.349066));
-        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
-    } else {
-        double exp1 = exp(-27.288677 * (alpha_eff * M_PI/180.0 - 0.333924));
-        double exp2 = exp(27.288677 * (alpha_eff * M_PI/180.0 + 0.333924));
-        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
-    }
-    
-    // Compute CL
-    double alpha_eff_rad = alpha_eff * M_PI/180.0;
-    double linear_part = (1 - sigma) * (-192.388300 + 0.086718 * alpha);
-    double stall_part = sigma * 2 * copysign(1.0, alpha_eff) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
-    
-    double CL = linear_part + stall_part + 0.016336 * delta_e + 2.415945 * delta_f + 2.415939 * delta_a + 
-               2.501769 * C_mu + 0.109898 * alpha * C_mu - 0.000503 * alpha * delta_e;
-    
-    return clamp_double(CL, -1.0, 4.5);
+static inline double compute_CL_takeoff_unified(double alpha_deg, double de, double df, double da_L, double da_R, double Cmu) {
+    double alpha_rad = alpha_deg * M_PI / 180.0;
+    double sigma = (1 + exp(-18.080 * (alpha_rad - (16.345 * M_PI / 180.0))) + exp(18.080 * (alpha_rad + (16.345 * M_PI / 180.0))))
+                 / ((1 + exp(-18.080 * (alpha_rad - (16.345 * M_PI / 180.0)))) * (1 + exp(18.080 * (alpha_rad + (16.345 * M_PI / 180.0)))));
+    double CL = (1 - sigma) * (0.195343 + 0.111981 * alpha_deg)
+              + sigma * (2.0 * copysign(1.0, alpha_rad) * pow(sin(alpha_rad), 2) * cos(alpha_rad))
+              + (0.015900 * de + 0.009675 * df + 0.006162 * da_L + 0.006168 * da_R
+                 + 2.252691 * Cmu + 0.031598 * (alpha_deg * Cmu));
+    return clamp_double(CL, -1.5, 5);
 }
+// ...existing code...
 
 /*
  * Cruise Unified CD
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu, CL_measured
  * Output: CD
  */
- static inline double compute_CD_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
-    // CD0 calculation for cruise
-    double CD0 = 0.070434 + 0.000723 * delta_e + 0.000000 * delta_f + 0.000769 * delta_a + 1.336954 * C_mu + 0.085235 * alpha * C_mu;
+// static inline double compute_CD_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
+//     // Use your existing CD calculation with modifications for cruise configuration
+//     double CD0c = -0.51403 * C_mu + 0.107575;
+//     double CD0_del_f_term = 0.01285 * delta_f + 0.0021;
+//     double CD0 = CD0c + 0.0038 * delta_e + CD0_del_f_term + 0.0015 * delta_a + 1.322175 * C_mu;
     
-    // Effective angle of attack calculation
-    double alpha_eff;
-    if (alpha >= 0) {
-        alpha_eff = alpha + 0.113163 * delta_e;
-    } else {
-        alpha_eff = alpha + 0.200000 * delta_e;
-    }
+//     // k interpolation for cruise (0 deg flaps)
+//     double k = 0.046;
     
-    // Convert effective alpha to radians for calculations
-    double alpha_eff_rad = alpha_eff * M_PI / 180.0;
+//     double CD = CD0 + k * (CL_meas * CL_meas);
+//     return clamp_double(CD, 0.0, 3.0);
+// }
+
+// /*
+//  * Takeoff Unified CD  
+//  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu, CL_measured
+//  * Output: CD
+//  */
+// static inline double compute_CD_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
+//     // Use your existing CD calculation with modifications for takeoff configuration
+//     double CD0c = -0.51403 * C_mu + 0.107575;
+//     double CD0_del_f_term = 0.01285 * delta_f + 0.0021;
+//     double CD0 = CD0c + 0.0038 * delta_e + CD0_del_f_term + 0.0015 * delta_a + 1.322175 * C_mu;
     
-    // Stall parameter sigma calculation
-    double sigma;
-    if (alpha >= 0) {
-        double exp_neg = exp(-5.000000 * (alpha_eff_rad - 0.052360));
-        double exp_pos = exp(5.000000 * (alpha_eff_rad + 0.052360));
-        sigma = (1 + exp_neg + exp_pos) / ((1 + exp_neg) * (1 + exp_pos));
-    } else {
-        double exp_neg = exp(-119.999988 * (alpha_eff_rad - 0.052360));
-        double exp_pos = exp(119.999988 * (alpha_eff_rad + 0.052360));
-        sigma = (1 + exp_neg + exp_pos) / ((1 + exp_neg) * (1 + exp_pos));
-    }
+//     // k interpolation for takeoff (40 deg flaps)
+//     double k = 0.056;
     
-    // Final CD calculation with stall-aware behavior
-    double CD_normal = 0.046000 * CL_meas * CL_meas;
-    double CD_stall = 2.000000 * sin(alpha_eff_rad) * sin(alpha_eff_rad);
-    double CD = (1.0 - sigma) * CD_normal + sigma * CD_stall + CD0;
-    
+//     double CD = CD0 + k * (CL_meas * CL_meas);
+//     return clamp_double(CD, 0.0, 3.0);
+// }
+
+static inline double compute_CD_cruise_unified(double alpha_deg, double de, double df, double da_L, double da_R, double Cmu, double CL_meas) {
+    // Effective angle of attack
+    double alpha_eff_deg = alpha_deg + ((alpha_deg >= 0) ? (-0.005509 * de) : (0.2 * de));
+    double alpha_eff_rad = alpha_eff_deg * M_PI / 180.0;
+
+    // Switching function sigma
+    const double M = 120.0;
+    const double c_pos = 8.48 * M_PI / 180.0;
+    const double c_neg = 3.00 * M_PI / 180.0;
+
+    double sigma_pos = (1 + exp(-M * (alpha_eff_rad - c_pos)) + exp(M * (alpha_eff_rad + c_pos)))
+                    / ((1 + exp(-M * (alpha_eff_rad - c_pos))) * (1 + exp(M * (alpha_eff_rad + c_pos))));
+    double sigma_neg = (1 + exp(-M * (alpha_eff_rad - c_neg)) + exp(M * (alpha_eff_rad + c_neg)))
+                    / ((1 + exp(-M * (alpha_eff_rad - c_neg))) * (1 + exp(M * (alpha_eff_rad + c_neg))));
+    double sigma = (alpha_deg < 0) ? sigma_neg : sigma_pos;
+
+    // CD0 base drag
+    double CD0 = 0.071087
+        + 0.000139 * de
+        + 0.005921 * df
+        + 0.001166 * da_L
+        + 0.003391 * da_R
+        + 1.273205 * Cmu
+        + 0.064856 * (alpha_deg * Cmu);
+
+    // k factor
+    double k = 0.046 + (0.01 / 120.0) * (df + da_L + da_R);
+
+    // Total drag coefficient
+    double CD = CD0 + (1 - sigma) * (k * (CL_meas * CL_meas))
+        + sigma * (2.0 * pow(sin(alpha_eff_rad), 2));
+
     return clamp_double(CD, 0.0, 3.0);
 }
 
-/*
- * Takeoff Unified CD  
- * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu, CL_measured
- * Output: CD
- */
- static inline double compute_CD_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu, double CL_meas) {
-    // CD0 calculation for takeoff
-    double CD0 = 84.762851 + 0.001273 * delta_e + (-2.113864) * (delta_f + delta_a)/2.0 + 1.745522 * C_mu + 0.107359 * alpha * C_mu;
-    
-    // Effective angle of attack calculation
-    double alpha_eff;
-    if (alpha >= 0) {
-        alpha_eff = alpha + (-0.007801) * delta_e;
-    } else {
-        alpha_eff = alpha + 0.117995 * delta_e;
-    }
-    
-    // Convert effective alpha to radians for calculations
-    double alpha_eff_rad = alpha_eff * M_PI / 180.0;
-    
-    // Stall parameter sigma calculation
-    double sigma;
-    if (alpha >= 0) {
-        double exp_neg = exp(-120.000000 * (alpha_eff_rad - 0.129117));
-        double exp_pos = exp(120.000000 * (alpha_eff_rad + 0.129117));
-        sigma = (1 + exp_neg + exp_pos) / ((1 + exp_neg) * (1 + exp_pos));
-    } else {
-        double exp_neg = exp(-80.229151 * (alpha_eff_rad - 0.343093));
-        double exp_pos = exp(80.229151 * (alpha_eff_rad + 0.343093));
-        sigma = (1 + exp_neg + exp_pos) / ((1 + exp_neg) * (1 + exp_pos));
-    }
-    
-    // Final CD calculation with stall-aware behavior
-    double CD_normal = 0.056000 * CL_meas * CL_meas;
-    double CD_stall = 2.000000 * sin(alpha_eff_rad) * sin(alpha_eff_rad);
-    double CD = (1.0 - sigma) * CD_normal + sigma * CD_stall + CD0;
-    
+static inline double compute_CD_takeoff_unified(double alpha_deg, double de, double df, double da_L, double da_R, double Cmu, double CL_meas) {
+    // Effective angle of attack
+    double alpha_eff_deg = alpha_deg + ((alpha_deg >= 0) ? (-0.005509 * de) : (0.2 * de));
+    double alpha_eff_rad = alpha_eff_deg * M_PI / 180.0;
+
+    // Switching function sigma
+    const double M = 120.0;
+    const double c_pos = 8.48 * M_PI / 180.0;
+    const double c_neg = 3.00 * M_PI / 180.0;
+
+    double sigma_pos = (1 + exp(-M * (alpha_eff_rad - c_pos)) + exp(M * (alpha_eff_rad + c_pos)))
+                    / ((1 + exp(-M * (alpha_eff_rad - c_pos))) * (1 + exp(M * (alpha_eff_rad + c_pos))));
+    double sigma_neg = (1 + exp(-M * (alpha_eff_rad - c_neg)) + exp(M * (alpha_eff_rad + c_neg)))
+                    / ((1 + exp(-M * (alpha_eff_rad - c_neg))) * (1 + exp(M * (alpha_eff_rad + c_neg))));
+    double sigma = (alpha_deg < 0) ? sigma_neg : sigma_pos;
+
+    // CD0 base drag
+    double CD0 = 0.071087
+        + 0.000139 * de
+        + 0.005921 * df
+        + 0.001166 * da_L
+        + 0.003391 * da_R
+        + 1.273205 * Cmu
+        + 0.064856 * (alpha_deg * Cmu);
+
+    // k factor
+    double k = 0.046 + (0.01 / 120.0) * (df + da_L + da_R);
+
+    // Total drag coefficient
+    double CD = CD0 + (1 - sigma) * (k * (CL_meas * CL_meas))
+        + sigma * (2.0 * pow(sin(alpha_eff_rad), 2));
+
     return clamp_double(CD, 0.0, 3.0);
 }
+
 
 /*
  * Cruise Unified Cm
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
  * Output: Cm
  */
-static inline double compute_Cm_cruise_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
-    // Compute alpha_eff
-    double alpha_eff;
-    if (alpha >= 0) {
-        alpha_eff = alpha + (-0.044524) * delta_e;
-    } else {
-        alpha_eff = alpha + 0.011528 * delta_e;
-    }
-    
-    // Compute sigma
-    double sigma;
-    if (alpha >= 0) {
-        double exp1 = exp(-119.999992 * (alpha_eff * M_PI/180.0 - 0.349066));
-        double exp2 = exp(119.999992 * (alpha_eff * M_PI/180.0 + 0.349066));
-        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
-    } else {
-        double exp1 = exp(-104.966037 * (alpha_eff * M_PI/180.0 - 0.320230));
-        double exp2 = exp(104.966037 * (alpha_eff * M_PI/180.0 + 0.320230));
-        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
-    }
-    
-    // Compute Cm
-    double alpha_eff_rad = alpha_eff * M_PI/180.0;
-    double linear_part = (1 - sigma) * (0.202690 + (-0.060624) * alpha);
-    double stall_part = sigma * (-0.250000) * 2 * copysign(1.0, alpha_eff_rad) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
-     double control_terms = (-0.081528) * delta_e + 0.000000 * delta_f + (-0.001187) * delta_a + 
-                           1.406879 * C_mu + 0.321595 * alpha * C_mu + (-0.001101) * alpha * delta_e;
-     
-     double Cm = linear_part + stall_part + control_terms;
-     
-     return clamp_double(Cm, -3.0, 3.0);
+static inline double compute_Cm_cruise_unified(double alpha_deg, double de, double df, double da_L, double da_R, double Cmu) {
+    // Effective angle of attack
+    double alpha_eff_deg = alpha_deg + ((alpha_deg >= 0) ? (-0.008112 * de) : (0.000009 * de));
+    double alpha_eff_rad = alpha_eff_deg * M_PI / 180.0;
+
+    // Switching function sigma
+    const double Mpos = 59.547506;
+    const double cpos = 0.153102;
+    const double Mneg = 116.594978;
+    const double cneg = 0.348137;
+
+    double sigma_pos = (1 + exp(-Mpos * (alpha_eff_rad - cpos)) + exp(Mpos * (alpha_eff_rad + cpos)))
+                    / ((1 + exp(-Mpos * (alpha_eff_rad - cpos))) * (1 + exp(Mpos * (alpha_eff_rad + cpos))));
+    double sigma_neg = (1 + exp(-Mneg * (alpha_eff_rad - cneg)) + exp(Mneg * (alpha_eff_rad + cneg)))
+                    / ((1 + exp(-Mneg * (alpha_eff_rad - cneg))) * (1 + exp(Mneg * (alpha_eff_rad + cneg))));
+    double sigma = (alpha_deg < 0) ? sigma_neg : sigma_pos;
+
+    // Flat plate CL
+    double CL_flat = 2.0 * copysign(1.0, alpha_eff_rad) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
+
+    // Post-stall moment
+    double Cm_post = (alpha_deg >= 0) ? (-0.343986 - 1.359063 * fabs(CL_flat)) : 0.0;
+
+    // Linear moment
+    double Cm_lin = 0.340124 + (-0.035189) * alpha_deg;
+
+    // Control terms
+    double controls = (-0.077253) * de
+                    + 0.008949 * df
+                    + 0.001488 * da_L
+                    + 0.000651 * da_R
+                    + 0.603072 * Cmu
+                    + 0.079124 * (alpha_deg * Cmu)
+                    + (-0.000863) * (alpha_deg * de);
+
+    double Cm = (1 - sigma) * Cm_lin + sigma * Cm_post + controls;
+
+    return clamp_double(Cm, -3.0, 3.0);
 }
 
 /*
@@ -234,37 +223,44 @@ static inline double compute_Cm_cruise_unified(double alpha, double delta_e, dou
  * Inputs: alpha (deg), delta_e (deg), delta_f (deg), delta_a (deg), C_mu
  * Output: Cm
  */
-static inline double compute_Cm_takeoff_unified(double alpha, double delta_e, double delta_f, double delta_a, double C_mu) {
-    // Compute alpha_eff
-    double alpha_eff;
-    if (alpha >= 0) {
-        alpha_eff = alpha + (-0.059164) * delta_e;
-    } else {
-        alpha_eff = alpha + 0.000681 * delta_e;
-    }
-    
-    // Compute sigma
-    double sigma;
-    if (alpha >= 0) {
-        double exp1 = exp(-12.709373 * (alpha_eff * M_PI/180.0 - 0.349066));
-        double exp2 = exp(12.709373 * (alpha_eff * M_PI/180.0 + 0.349066));
-        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
-    } else {
-        double exp1 = exp(-99.615681 * (alpha_eff * M_PI/180.0 - 0.336355));
-        double exp2 = exp(99.615681 * (alpha_eff * M_PI/180.0 + 0.336355));
-        sigma = (1 + exp1 + exp2) / ((1 + exp1) * (1 + exp2));
-    }
-    
-    // Compute Cm
-    double alpha_eff_rad = alpha_eff * M_PI/180.0;
-    double linear_part = (1 - sigma) * (59.906142 + (-0.029240) * alpha);
-    double stall_part = sigma * (0.250000) * 2 * copysign(1.0, alpha_eff_rad) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
-     double control_terms = (-0.063277) * delta_e + (-1.479697) * (delta_f + delta_a)/2.0 + 
-                           0.226271 * C_mu + 0.144623 * alpha * C_mu + (-0.002710) * alpha * delta_e;
-     
-     double Cm = linear_part + stall_part + control_terms;
-     
-     return clamp_double(Cm, -3.0, 3.0);
+static inline double compute_Cm_takeoff_unified(double alpha_deg, double de, double df, double da_L, double da_R, double Cmu) {
+    // Effective angle of attack
+    double alpha_eff_deg = alpha_deg + ((alpha_deg >= 0) ? (-0.008112 * de) : (0.000009 * de));
+    double alpha_eff_rad = alpha_eff_deg * M_PI / 180.0;
+
+    // Switching function sigma
+    const double Mpos = 59.547506;
+    const double cpos = 0.153102;
+    const double Mneg = 116.594978;
+    const double cneg = 0.348137;
+
+    double sigma_pos = (1 + exp(-Mpos * (alpha_eff_rad - cpos)) + exp(Mpos * (alpha_eff_rad + cpos)))
+                    / ((1 + exp(-Mpos * (alpha_eff_rad - cpos))) * (1 + exp(Mpos * (alpha_eff_rad + cpos))));
+    double sigma_neg = (1 + exp(-Mneg * (alpha_eff_rad - cneg)) + exp(Mneg * (alpha_eff_rad + cneg)))
+                    / ((1 + exp(-Mneg * (alpha_eff_rad - cneg))) * (1 + exp(Mneg * (alpha_eff_rad + cneg))));
+    double sigma = (alpha_deg < 0) ? sigma_neg : sigma_pos;
+
+    // Flat plate CL
+    double CL_flat = 2.0 * copysign(1.0, alpha_eff_rad) * pow(sin(alpha_eff_rad), 2) * cos(alpha_eff_rad);
+
+    // Post-stall moment
+    double Cm_post = (alpha_deg >= 0) ? (-0.343986 - 1.359063 * fabs(CL_flat)) : 0.0;
+
+    // Linear moment
+    double Cm_lin = 0.340124 + (-0.035189) * alpha_deg;
+
+    // Control terms
+    double controls = (-0.077253) * de
+                    + 0.008949 * df
+                    + 0.001488 * da_L
+                    + 0.000651 * da_R
+                    + 0.603072 * Cmu
+                    + 0.079124 * (alpha_deg * Cmu)
+                    + (-0.000863) * (alpha_deg * de);
+
+    double Cm = (1 - sigma) * Cm_lin + sigma * Cm_post + controls;
+
+    return clamp_double(Cm, -3.0, 3.0);
 }
 
 
@@ -371,7 +367,7 @@ static char g_current_filename[256] = {0};
 // When enabled, logs flight data at 10 Hz to timestamped CSV files
 // Files are automatically saved when SITL disconnects
 // Set to false to disable logging completely (saves CPU and disk space)
-static const bool ENABLE_CSV_LOGGING = true;  // Change to false to disable logging
+static const bool ENABLE_CSV_LOGGING = false;  // Change to false to disable logging
 
 // Shutdown handler - called when SITL disconnects/terminates
 static void cleanup_csv_logging() {
@@ -413,8 +409,8 @@ Plane::Plane(const char *frame_str) :
        scaling from motor power to Newtons. Allows the plane to hold
        vertically against gravity when the motor is at hover_throttle
     */
-    // float hover_const = 0.937; thrust_scale = 400.0f;
-    thrust_scale = 630.0f; 
+    // float hover_const = 0.937;
+    thrust_scale = 1000.0f; //400.0f; //1000.0f; //400.0f;`
     frame_height = 0.1f;
 
     ground_behavior = GROUND_BEHAVIOR_FWD_ONLY;
@@ -640,7 +636,6 @@ float Plane::dragCoeff(float alpha) const
 }
 
 
-
 SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator, float inputRudder, float inputThrust,const struct sitl_input &input, bool fm)
 {
     const bool default_mode = false;
@@ -710,6 +705,8 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
 
     float rho = air_density;
 
+    //const float rho = 1.225; // air density at sea level
+
 	//request lift and drag alpha-coefficients from the corresponding functions
 	double c_lift_a = liftCoeff(alpha);
 	double c_drag_a = dragCoeff(alpha);
@@ -758,8 +755,9 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
 
     
     float thrust_offset = 0.091;
-	//calculate aerodynamic force
+
 	double qbar = 1.0/2.0*rho*pow(airspeed,2)*s; //Calculate dynamic pressure
+    gcs().send_text(MAV_SEVERITY_INFO, "SAREA(ref area)=%.3f m^2", (double)s);
     float ax = 0.0f, ay = 0.0f, az = 0.0f;   // body forces
     float la = 0.0f, ma = 0.0f, na = 0.0f;   // body moments
 
@@ -1026,6 +1024,7 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
         const float Lf = 0.858f;    // CG to nose gear (+x) 
         const float Lb = 0.122f;    // CG to main gear (aft)
         float rho = air_density;
+        //const float rho = 1.225; // air density at sea level
 
         // Throttle handling
         float throttle;
@@ -1043,13 +1042,20 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
         double q = gyro.y;
         // double r = gyro.z;
         
+        // ...existing code...
         // Takeoff/cruise mode determination based on speed
         bool takeoff_mode = (airspeed <= 30.0f);
-        
+
         // Control surface angles based on mode
         double del_e_deg = inputElevator * radtodeg;
         double del_a_deg = takeoff_mode ? 40.0 : 0.0;  // ailerons
+
+        // Hardcoded individual ailerons for future use
+        double aileron_r_deg = takeoff_mode ? 40.0 : 0.0;  // right aileron
+        double aileron_l_deg = takeoff_mode ? 40.0 : 0.0;  // left aileron
+
         double del_f_deg = takeoff_mode ? 40.0 : 0.0;  // flaps
+        // ...existing code...
         
         // Alpha conditioning: force to 0 at low speeds, then clamp to ±20°
         double alpha_deg_raw = alpha * radtodeg;
@@ -1075,16 +1081,16 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
         double CL_unified, CD_unified;
         
         if (takeoff_mode) {
-            CL_unified = compute_CL_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu);
-            CD_unified = compute_CD_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu, CL_unified);
+            CL_unified = compute_CL_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, aileron_l_deg, aileron_r_deg, C_mu);
+            CD_unified = compute_CD_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, aileron_l_deg, aileron_r_deg, C_mu, CL_unified);
         } else {
-            CL_unified = compute_CL_cruise_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu);
-            CD_unified = compute_CD_cruise_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu, CL_unified);
+            CL_unified = compute_CL_cruise_unified(alpha_deg, del_e_deg, del_f_deg, aileron_l_deg, aileron_r_deg, C_mu);
+            CD_unified = compute_CD_cruise_unified(alpha_deg, del_e_deg, del_f_deg, aileron_l_deg, aileron_r_deg, C_mu, CL_unified);
         }
         
 
         const float theta = AP::ahrs().get_pitch();
-        float thrust_offset = 0.03;
+        float thrust_offset = 0.091;
         double qbar = 1.0/2.0*rho*pow(airspeed,2)*s;
         float ax = 0.0f, ay = 0.0f, az = 0.0f;
         float la = 0.0f, ma = 0.0f, na = 0.0f;
@@ -1110,9 +1116,9 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
             // Compute moment coefficient using unified functions
             double Cm_unified;
             if (takeoff_mode) {
-                Cm_unified = compute_Cm_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu);
+                Cm_unified = compute_Cm_takeoff_unified(alpha_deg, del_e_deg, del_f_deg, aileron_l_deg, aileron_r_deg, C_mu);
             } else {
-                Cm_unified = compute_Cm_cruise_unified(alpha_deg, del_e_deg, del_f_deg, del_a_deg, C_mu);
+                Cm_unified = compute_Cm_cruise_unified(alpha_deg, del_e_deg, del_f_deg, aileron_l_deg, aileron_r_deg, C_mu);
             }
 
             const double Cm_q = -95.2255;  // Pitch damping coefficient
@@ -1312,9 +1318,9 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
              float pitch_deg = theta * radtodeg;  // Convert pitch from radians to degrees
              float v_z = velocity_ef.z;  // Vertical speed (down-positive in NED)
              
-             printf("ALT_FDM: Mode=%s Vinf=%.2f Pitch=%.2f Vz=%.2f | Alpha=%.2f(raw=%.2f) Del_e=%.2f Del_a=%.2f Del_f=%.2f Del_r=%.2f | J=%.3f Cmu=%.4f | CL=%.4f Lift=%.1f CD=%.4f Drag=%.1f Cm=%.4f PitchMom=%.1f\n", 
+             printf("ALT_FDM: Mode=%s Vinf=%.2f Pitch=%.2f Vz=%.2f | Alpha=%.2f(raw=%.2f) Del_e=%.2f Del_a=%.2f Del_f=%.2f Del_r=%.2f | J=%.3f Cmu=%.4f | CL=%.4f Lift=%.1f CD=%.4f Drag=%.1f Cm=%.4f PitchMom=%.1f | S=%.3f\n",
                      takeoff_mode ? "TKOFF" : "CRUISE", airspeed, pitch_deg, v_z, alpha_deg, alpha_deg_raw, del_e_deg, del_a_deg, del_f_deg, inputRudder*radtodeg, 
-                     J_display, C_mu, CL_unified, total_lift_force, CD_unified, total_drag_force, ma/(0.5*rho*sq(airspeed)*c*s), ma);
+                     J_display, C_mu, CL_unified, total_lift_force, CD_unified, total_drag_force, ma/(0.5*rho*sq(airspeed)*c*s), ma, s);
 
             // === CSV LOGGING (CONTROLLED BY ENABLE_CSV_LOGGING FLAG) ===
             // Only execute logging code if explicitly enabled via flag at top of file
@@ -1540,7 +1546,6 @@ void Plane::update(const struct sitl_input &input)
     // update magnetic field
     update_mag_field_bf();
 }
-
 
 
 
