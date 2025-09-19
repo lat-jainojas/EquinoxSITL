@@ -6,9 +6,9 @@
 # Thanks to Georacer!
 
 {
-    "s": 0.45,
-    "b": 1.88,
-    "c": 0.24,
+    "s": 0.9, // 0.45 default value
+    "b": 3, //1.88, default value 
+    "c": 0.3, //0.24, default value
     "c_lift_0": 0.56,
     "c_lift_deltae": 0,
     "c_lift_a": 6.9,
