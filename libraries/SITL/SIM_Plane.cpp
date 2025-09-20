@@ -24,14 +24,7 @@
 
 // Writing the code for Mr. Rajat Patel to read
 // What I have done is made separate functions for the different coefficients which can just be changed later on without affecting any other part of the code.
-
-
-
-
 // // Old analytical CL and CD models removed - now using unified models above
-
-
-
 using namespace SITL;
 
 // Global variables for shutdown logging
@@ -646,75 +639,75 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
     if (default_mode) 
     {
         float alpha = angle_of_attack;
-        float radtodeg = 180/(3.14);
+    float radtodeg = 180/(3.14);
         // printf("alpha = %.3f",alpha*radtodeg);
-        //calculate aerodynamic torque
-        float effective_airspeed = airspeed;
+	//calculate aerodynamic torque
+    float effective_airspeed = airspeed;
 
-        if (tailsitter || aerobatic) {
-            /*
-            tailsitters get airspeed from prop-wash
-            */
-            effective_airspeed += inputThrust * 20;
+    if (tailsitter || aerobatic) {
+        /*
+          tailsitters get airspeed from prop-wash
+         */
+        effective_airspeed += inputThrust * 20;
 
-            // reduce effective angle of attack as thrust increases
-            alpha *= constrain_float(1 - inputThrust, 0, 1);
-        }
+        // reduce effective angle of attack as thrust increases
+        alpha *= constrain_float(1 - inputThrust, 0, 1);
+    }
 
 
-        const float c_drag_q = coefficient.c_drag_q;
-        const float c_lift_q = coefficient.c_lift_q;
-        const float s = coefficient.s;
-        const float c = coefficient.c;
-        const float b = coefficient.b;
-        const float c_drag_deltae = coefficient.c_drag_deltae;
-        const float c_lift_deltae = coefficient.c_lift_deltae;
-        const float c_y_0 = coefficient.c_y_0;
-        const float c_y_b = coefficient.c_y_b;
-        const float c_y_p = coefficient.c_y_p;
-        const float c_y_r = coefficient.c_y_r;
-        const float c_y_deltaa = coefficient.c_y_deltaa;
-        const float c_y_deltar = coefficient.c_y_deltar;
-        const float c_drag_0 = coefficient.c_drag_0;
-        const float c_lift_0 = coefficient.c_lift_0;
-        const float c_l_0 = coefficient.c_l_0;
-        const float c_l_b = coefficient.c_l_b;
-        const float c_l_p = coefficient.c_l_p;
-        const float c_l_r = coefficient.c_l_r;
-        const float c_l_deltaa = coefficient.c_l_deltaa;
-        const float c_l_deltar = coefficient.c_l_deltar;
-        const float c_m_0 = coefficient.c_m_0;
-        // const float c_m_a = coefficient.c_m_a;
-        float c_m_a;
-        if (alpha<0){
-            c_m_a = 0.06*radtodeg;
-        }
-        else if (alpha>0 && alpha<(5/radtodeg))
-        {
-            c_m_a = 0.15*radtodeg;
-        }
-        else{
-            c_m_a = -0.1*radtodeg;
-        }
+    const float c_drag_q = coefficient.c_drag_q;
+    const float c_lift_q = coefficient.c_lift_q;
+    const float s = coefficient.s;
+    const float c = coefficient.c;
+    const float b = coefficient.b;
+    const float c_drag_deltae = coefficient.c_drag_deltae;
+    const float c_lift_deltae = coefficient.c_lift_deltae;
+    const float c_y_0 = coefficient.c_y_0;
+    const float c_y_b = coefficient.c_y_b;
+    const float c_y_p = coefficient.c_y_p;
+    const float c_y_r = coefficient.c_y_r;
+    const float c_y_deltaa = coefficient.c_y_deltaa;
+    const float c_y_deltar = coefficient.c_y_deltar;
+    const float c_drag_0 = coefficient.c_drag_0;
+    const float c_lift_0 = coefficient.c_lift_0;
+    const float c_l_0 = coefficient.c_l_0;
+    const float c_l_b = coefficient.c_l_b;
+    const float c_l_p = coefficient.c_l_p;
+    const float c_l_r = coefficient.c_l_r;
+    const float c_l_deltaa = coefficient.c_l_deltaa;
+    const float c_l_deltar = coefficient.c_l_deltar;
+    const float c_m_0 = coefficient.c_m_0;
+    // const float c_m_a = coefficient.c_m_a;
+    float c_m_a;
+    if (alpha<0){
+        c_m_a = 0.06*radtodeg;
+    }
+    else if (alpha>0 && alpha<(5/radtodeg))
+    {
+        c_m_a = 0.15*radtodeg;
+    }
+    else{
+        c_m_a = -0.1*radtodeg;
+    }
         // printf("Cm_alpha=%0.3f",c_m_a);
-        const float c_m_q = coefficient.c_m_q;
-        const float c_m_deltae = coefficient.c_m_deltae;
-        const float c_n_0 = coefficient.c_n_0;
-        const float c_n_b = coefficient.c_n_b;
-        const float c_n_p = coefficient.c_n_p;
-        const float c_n_r = coefficient.c_n_r;
-        const float c_n_deltaa = coefficient.c_n_deltaa;
-        const float c_n_deltar = coefficient.c_n_deltar;
-        const float Lf = 0.858f;    // CG to nose gear (+x) 
-        const float Lb = 0.122f;    // CG to main gear (aft)
+    const float c_m_q = coefficient.c_m_q;
+    const float c_m_deltae = coefficient.c_m_deltae;
+    const float c_n_0 = coefficient.c_n_0;
+    const float c_n_b = coefficient.c_n_b;
+    const float c_n_p = coefficient.c_n_p;
+    const float c_n_r = coefficient.c_n_r;
+    const float c_n_deltaa = coefficient.c_n_deltaa;
+    const float c_n_deltar = coefficient.c_n_deltar;
+    const float Lf = 0.858f;    // CG to nose gear (+x) 
+    const float Lb = 0.122f;    // CG to main gear (aft)
 
-        float rho = air_density;
+    float rho = air_density;
 
         //const float rho = 1.225; // air density at sea level
 
-        //request lift and drag alpha-coefficients from the corresponding functions
-        double c_lift_a = liftCoeff(alpha);
-        double c_drag_a = dragCoeff(alpha);
+	//request lift and drag alpha-coefficients from the corresponding functions
+	double c_lift_a = liftCoeff(alpha);
+	double c_drag_a = dragCoeff(alpha);
 
         // === CONSOLIDATED AERODYNAMIC COEFFICIENTS ===
         double p = gyro.x;
@@ -734,48 +727,48 @@ SITL::Wrench Plane::getForcesAndMoments(float inputAileron, float inputElevator,
         double Cm = c_m_0 + c_m_a*alpha + c_m_q*c*q/(2*effective_airspeed) + c_m_deltae*inputElevator;
         double Cn = c_n_0 + c_n_b*beta + c_n_p*b*p/(2*effective_airspeed) + c_n_r*b*r/(2*effective_airspeed) + c_n_deltaa*inputAileron + c_n_deltar*inputRudder;
 
-        float throttle;
-        if (reverse_thrust) {
-            throttle = filtered_servo_angle(input, 2);
-        } else {
-            throttle = filtered_servo_range(input, 2);
-        }
-        
-        float thrust     = throttle;
-        thrust *= thrust_scale;
+    float throttle;
+    if (reverse_thrust) {
+        throttle = filtered_servo_angle(input, 2);
+    } else {
+        throttle = filtered_servo_range(input, 2);
+    }
+    
+    float thrust     = throttle;
+    thrust *= thrust_scale;
 
-        // double aerocfs[6];
-        
-        // float deg_inputa = inputAileron*radtodeg;
-        // float deg_inpute = inputElevator*radtodeg;
-        // float deg_inputr = inputRudder*radtodeg;
-        // float deg_beta = beta*radtodeg;
-        // float deg_alpha = alpha*radtodeg;
+    // double aerocfs[6];
+    
+    // float deg_inputa = inputAileron*radtodeg;
+    // float deg_inpute = inputElevator*radtodeg;
+    // float deg_inputr = inputRudder*radtodeg;
+    // float deg_beta = beta*radtodeg;
+    // float deg_alpha = alpha*radtodeg;
 
-        //printf("thrust = %.3f, throttle = %.3f,inputAileron=%.3f,inputElevator=%.3f",thrust, throttle*100,deg_inputa,deg_inpute);
-        fm = 0;
+    //printf("thrust = %.3f, throttle = %.3f,inputAileron=%.3f,inputElevator=%.3f",thrust, throttle*100,deg_inputa,deg_inpute);
+    fm = 0;
 
         const float theta = AP::ahrs().get_pitch();
 
 
-        
-        float thrust_offset = 0.091;
+    
+    float thrust_offset = 0.091;
 
-        double qbar = 1.0/2.0*rho*pow(airspeed,2)*s; //Calculate dynamic pressure
+	double qbar = 1.0/2.0*rho*pow(airspeed,2)*s; //Calculate dynamic pressure
         gcs().send_text(MAV_SEVERITY_INFO, "SAREA(ref area)=%.3f m^2", (double)s);
-        float ax = 0.0f, ay = 0.0f, az = 0.0f;   // body forces
-        float la = 0.0f, ma = 0.0f, na = 0.0f;   // body moments
+    float ax = 0.0f, ay = 0.0f, az = 0.0f;   // body forces
+    float la = 0.0f, ma = 0.0f, na = 0.0f;   // body moments
 
-        //double Nf,Nb;
-        if (is_zero(airspeed))
-        {
-            ax = 0;
-            ay = 0;
-            az = 0;
-            la = 0;
-            ma = 0;
-            na = 0;
-        }
+    //double Nf,Nb;
+    if (is_zero(airspeed))
+	{
+		ax = 0;
+		ay = 0;
+		az = 0;
+        la = 0;
+		ma = 0;
+		na = 0;
+	}
     else{
         // === NEW CONSOLIDATED FORCE CALCULATIONS ===
         // Body frame forces using complete coefficients
